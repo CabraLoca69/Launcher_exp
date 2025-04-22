@@ -1,8 +1,9 @@
 dist/
 icons_cache/
+__pycache__
 pruebas.py 
-.bat
-.txt
-.spec
-.json
-.log
+*.bat
+*.txt
+*.spec
+*.json
+*.log

@@ -1,0 +1,6 @@
+dist/
+icons_cache/
+__pycache__
+*.txt
+*.spec
+*.log

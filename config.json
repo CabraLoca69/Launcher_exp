@@ -1,0 +1,17 @@
+{
+    "global": {
+        "tab_order": [
+            "Hoyo"
+        ]
+    },
+    "Hoyo": {
+        "platform_folders": [
+            "N:/Juegos/HoyoPlay"
+        ],
+        "game_list": {
+            "GenshinImpact": "N:/Juegos/HoyoPlay\\Genshin Impact game\\GenshinImpact.exe"
+        },
+        "game_times": {},
+        "game_total_times": {}
+    }
+}

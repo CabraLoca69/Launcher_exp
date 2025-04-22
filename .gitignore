@@ -1,4 +1,8 @@
-dist/ 
+dist/
+icons_cache/
+pruebas.py 
 .bat
 .txt
 .spec
+.json
+.log

@@ -11,6 +11,7 @@ import win32com.client
 import win32ui
 import win32gui
 import win32con
+import logging
 from tkinter import filedialog, messagebox, ttk
 from ttkbootstrap.constants import *
 from ttkbootstrap.dialogs import Messagebox
@@ -20,8 +21,8 @@ from PIL import Image, ImageTk
 
 BASE_DIR = os.path.dirname(os.path.abspath(sys.argv[0]))
 CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
-launched = False
 os.makedirs("icons_cache", exist_ok=True)
+config_lock = threading.Lock()
 
 # Cargar configuración
 if os.path.exists(CONFIG_FILE):
@@ -31,7 +32,7 @@ else:
     config = {}
 
 if "global" not in config:
-    config = {"global": {**config}} if config else {"global": {}}
+    config.setdefault("global", {}).setdefault("allow_multiple_games", False)
 
 class loader:
     def __init__(self):
@@ -187,13 +188,23 @@ class DraggableNotebook(tb.Notebook):
         except:
             self.menu_out.tk_popup(event.x_root, event.y_root)    
     
-    def open_properties(self, platform_name):
-        
+    def open_properties(self, platform_name):        
+        name_changed = False
         def refresh_tree():
             self.loader.update_game_list(platform_name, self.platform_trees[platform_name])
             return
         
-        PropertiesWindow(self, platform_name, on_update_callback= refresh_tree)
+        def update_tab(new_name, pre_name):
+            for tab_id in self.tabs():
+                if self.tab(tab_id, "text") == pre_name:
+                    self.tab(tab_id, text= new_name)
+
+            self.platform_trees[new_name] = self.platform_trees.pop(pre_name, {})
+                                        
+            return
+            
+
+        PropertiesWindow(self, platform_name, on_update_callback= refresh_tree, on_update_tab=update_tab )
     
     def save_config(self):
         with open(CONFIG_FILE, "w") as f:
@@ -206,6 +217,7 @@ class DraggableNotebook(tb.Notebook):
 
     def new_platform(self, reload): # agrega una pestaña nueva en el notebook con el nombre de la plataforma ingresado por el usuario
         platform_name = simpledialog.askstring("Nueva Plataforma", "Nombre de la Plataforma:")
+        platform_name = platform_name.capitalize()
         self.add_platform(platform_name, reload)
         if platform_name:
             if self.empty_frame.winfo_ismapped():
@@ -311,18 +323,18 @@ class GamePlatformFrame(ttk.Frame):
 
     def launch_game(self, platform_name): # lanza el ejecutable seleccionado
         game_tree = self.game_tree
-        if not launched:
-            selected = game_tree.selection()
-            if selected:
-                item_id = selected[0]
-                game_name = game_tree.item(item_id, "values")[0]
-                game_path = config[platform_name]["game_list"].get(game_name)
-                if game_path:
-                    launch_game_threaded(platform_name, game_name, game_path, on_game_end=lambda: self.loader.update_game_list(platform_name, self))
-                else:
-                    messagebox.showwarning("Atención", "No se pudo encontrar el juego")
+        selected = game_tree.selection()
+        gamelaunch = GameLauncherController()
+        if selected:
+            item_id = selected[0]
+            game_name = game_tree.item(item_id, "values")[0]
+            game_path = config[platform_name]["game_list"].get(game_name)
+            if game_path:
+                gamelaunch.launch_game(platform_name, game_name, game_path, on_game_end=lambda: self.loader.update_game_list(platform_name, self))
             else:
-                messagebox.showwarning("Atención", "Selecciona un juego para lanzar")             
+                messagebox.showwarning("Atención", "No se pudo encontrar el juego")
+        else:
+            messagebox.showwarning("Atención", "Selecciona un juego para lanzar")             
     
     def add_exe(self, platform_name):
         exe = filedialog.askopenfilename(title="Selecciona un ejecutable")
@@ -377,7 +389,7 @@ class GamePlatformFrame(ttk.Frame):
         game_tree.delete(*game_tree.get_children())
 
         if not search_text:  # si está vacío, actualizá normalmente
-            self.loader.update_game_list(platform_name, self)
+            self.loader.update_game_list(platform_name, game_tree)
             return
         
         if not hasattr(game_tree, "icon_images"):
@@ -453,44 +465,61 @@ class GamePlatformFrame(ttk.Frame):
             self.on_game_right_click_out(event, platform_name)
                
 class PropertiesWindow(tk.Toplevel):
-    def __init__(self, parent, platform_name, on_update_callback=None):
+    def __init__(self, parent, platform_name, on_update_callback=None, on_update_tab=None):
         super().__init__(parent)
         self.title(f"Properties")
         self.geometry("400x300")
         self.resizable(False, False)
         self.platform_name = platform_name
         self.on_update_callback = on_update_callback
+        self.on_update_tab = on_update_tab
         self.loader = loader()
         
         self.build_ui()
 
     def build_ui(self):
-        notebook = ttk.Notebook(self)
-        notebook.pack(fill="both", expand=True)
+        self.notebook = ttk.Notebook(self)
+        self.notebook.pack(fill="both", expand=True)
         
-        frame_path = ttk.Frame(self)
-        notebook.add(frame_path, text="Directorios")
+        self.frame_path = ttk.Frame(self)
+        self.notebook.add(self.frame_path, text="Directorios")
 
-        frame_path.rowconfigure(0, weight=1,)
-        frame_path.columnconfigure([0, 1], weight=1)
+        self.frame_path.rowconfigure(0, weight=1,)
+        self.frame_path.columnconfigure([0, 1], weight=1)
         
-        path_listbox = tk.Listbox(frame_path, width=60, height=15)
-        path_listbox.grid(row=0, column=0, columnspan=2, padx=2, pady=5, sticky="nsew")
+        self.path_listbox = tk.Listbox(self.frame_path, width=60, height=15)
+        self.path_listbox.grid(row=0, column=0, columnspan=2, padx=2, pady=5, sticky="nsew")
 
-        path_listbox.bind("<Double-Button-1>", lambda event: self.double_click_on_path_event(event, path_listbox))
-        path_listbox.bind("<Button-1>", lambda event: self.on_path_click(event, path_listbox))
-        path_listbox.bind("<Button-3>", lambda event: self.on_path_right_click(event, self.platform_name, path_listbox))
+        self.path_listbox.bind("<Double-Button-1>", lambda event: self.double_click_on_path_event(event))
+        self.path_listbox.bind("<Button-1>", lambda event: self.on_path_click(event))
+        self.path_listbox.bind("<Button-3>", lambda event: self.on_path_right_click(event))
 
-        btn_add_dir = tk.Button(frame_path, text="Agregar Directorio", command= lambda: self.btn_new_path(self.platform_name, path_listbox), bg='#4CAF50', fg='white', font=('Arial', 12, 'bold'))
+        btn_add_dir = tk.Button(self.frame_path, text="Agregar Directorio", command= lambda: self.btn_new_path(), bg='#4CAF50', fg='white', font=('Arial', 12, 'bold'))
         btn_add_dir.grid(row=1, column=0, padx=2, pady=2, sticky="ew")
 
-        btn_remove_dir = tk.Button(frame_path, text="Eliminar Directorio", command= lambda: self.remove_folder(self.platform_name, path_listbox), bg='#f44336', fg='white', font=('Arial', 12, 'bold'))
+        btn_remove_dir = tk.Button(self.frame_path, text="Eliminar Directorio", command= lambda: self.remove_folder(), bg='#f44336', fg='white', font=('Arial', 12, 'bold'))
         btn_remove_dir.grid(row=1, column=1, padx=2, pady=2, sticky="ew")
         
-        self.update_game_list()
-        self.update_directory_list(self.platform_name, path_listbox)
+        self.platform_tab = ttk.Frame(self)
+        self.notebook.add(self.platform_tab, text = "Pestaña")
+
+        self.rename_frame = ttk.Frame(self.platform_tab)
+        self.rename_frame.pack(pady=20, padx=10)
         
-    def on_path_click(self, event, path_listbox):
+        tk.Label(self.rename_frame, text="Rename:").pack(side="left", padx=(0, 10))
+
+        self.tab_name_var = tk.StringVar(value=self.platform_name)
+        entry_tab_name = ttk.Entry(self.rename_frame, textvariable= self.tab_name_var, width=30)
+        entry_tab_name.pack(side="left")
+        
+        btn_save_name = ttk.Button(self.rename_frame, text="Save", command= self.update_tab_name)
+        btn_save_name.pack(side="left", padx=10)
+        
+        self.update_game_list()
+        self.update_directory_list()
+        
+    def on_path_click(self, event):
+        path_listbox = self.path_listbox
         index = path_listbox.nearest(event.y)
         bbox = path_listbox.bbox(index)
 
@@ -503,7 +532,8 @@ class PropertiesWindow(tk.Toplevel):
         path_listbox.selection_clear(0, tk.END)
         return "break"  # Esto cancela el comportamiento por defecto
     
-    def double_click_on_path_event(self, event, path_listbox):
+    def double_click_on_path_event(self, event):
+        path_listbox = self.path_listbox
         index = path_listbox.nearest(event.y)  # Devuelve el índice más cercano al clic
         bbox = path_listbox.bbox(index)         
         if bbox:
@@ -511,24 +541,35 @@ class PropertiesWindow(tk.Toplevel):
             if event.y >= y and event.y <= y + height:        
                 path_listbox.selection_clear(0, tk.END)  # Limpiar por si acaso
                 path_listbox.selection_set(index)        # Asegurar selección                
-                self.goto_folder(path_listbox)
+                self.goto_folder()
     
-    def on_path_right_click_out(self, event, platform_name, path_listbox):
+    def on_path_right_click_out(self, event):
         menu = tb.Menu(self, tearoff=0) 
-        menu.add_command(label= "Agregar directorio", command=lambda: self.btn_new_path(platform_name, path_listbox))
+        menu.add_command(label= "Agregar directorio", command=self.btn_new_path)
         x, y = event.x_root, event.y_root
         menu.post(x, y)
+
+    def toggle_multiple_games(self):
+        # Cambiar el valor de allow_multiple_games en el config
+        current_value = config["global"].get("allow_multiple_games", False)
+        config["global"]["allow_multiple_games"] = not current_value
+
+        # Guardar el cambio
+        with open(CONFIG_FILE, "w") as f:
+            json.dump(config, f, indent=4)
+        print(f"Permitir múltiples juegos: {not current_value}")
     
-    def btn_new_path(self, platform_name, path_listbox):
-        self.loader.add_folder(platform_name)
-        self.update_directory_list(platform_name, path_listbox)
+    def btn_new_path(self):
+        self.loader.add_folder(self.platform_name)
+        self.update_directory_list()
         self.update_game_list()
     
     def save_config(self):
         with open(CONFIG_FILE, "w") as f:
             json.dump(config, f, indent=4)
     
-    def on_path_right_click(self, event, platform_name, path_listbox):
+    def on_path_right_click(self, event):
+        path_listbox = self.path_listbox
         index = path_listbox.nearest(event.y)  # Devuelve el índice más cercano al clic
         bbox = path_listbox.bbox(index)        # Da las coordenadas del ítem
     
@@ -542,8 +583,8 @@ class PropertiesWindow(tk.Toplevel):
                 menu = tb.Menu(self, tearoff=0)  # tearoff=0 evita la opción "desgarrar" el menú
 
                 # Opciones del menú contextual
-                menu.add_command(label= "Ir a carpeta local", command=lambda: self.goto_folder(platform_name, path_listbox))
-                menu.add_command(label= "Eliminar directorio", command=lambda: self.remove_folder(platform_name, path_listbox))
+                menu.add_command(label= "Ir a carpeta local", command= self.goto_folder)
+                menu.add_command(label= "Eliminar directorio", command= self.remove_folder)
     
                 # Obtener las coordenadas del puntero
                 x, y = event.x_root, event.y_root
@@ -551,11 +592,12 @@ class PropertiesWindow(tk.Toplevel):
                 # Mostrar el menú en la posición del puntero
                 menu.post(x, y)
             else:
-                self.on_path_right_click_out(event, platform_name, path_listbox)
+                self.on_path_right_click_out(event)
         else:
-            self.on_path_right_click_out(event, platform_name, path_listbox)
+            self.on_path_right_click_out(event)
 
-    def goto_folder(self, path_listbox): 
+    def goto_folder(self):
+        path_listbox = self.path_listbox 
         selected = path_listbox.curselection()
         if selected:
             game_path_selected = path_listbox.get(selected[0])      
@@ -566,18 +608,19 @@ class PropertiesWindow(tk.Toplevel):
         else:
             messagebox.showwarning("Atención", "Selecciona un Directorio")
 
-    def remove_folder(self, platform_name, path_listbox): # elimina el directorio DE LA LISTA
+    def remove_folder(self): # elimina el directorio DE LA LISTA
+        path_listbox = self.path_listbox
         selected = path_listbox.curselection()
         if selected:
             path = path_listbox.get(selected[0])
         
-            for games, paths in config[platform_name]["game_list"].copy().items():
+            for games, paths in config[self.platform_name]["game_list"].copy().items():
                 if path in paths:
-                    del config[platform_name]["game_list"][games]
+                    del config[self.platform_name]["game_list"][games]
         
-            for platforms in config[platform_name]["platform_folders"].copy():
+            for platforms in config[self.platform_name]["platform_folders"].copy():
                 if path == platforms:
-                    config[platform_name]["platform_folders"].remove(path)
+                    config[self.platform_name]["platform_folders"].remove(path)
 
         
             path_listbox.delete(selected[0])
@@ -589,9 +632,10 @@ class PropertiesWindow(tk.Toplevel):
         # Close on escape
         self.bind("<Escape>", lambda e: self.destroy())
 
-    def update_directory_list(self, platform_name, path_listbox): # recible el path_list y lo "actualiza"
+    def update_directory_list(self): # recible el path_list y lo "actualiza"
+        path_listbox = self.path_listbox
         path_listbox.delete(0, tk.END)
-        paths = config[platform_name]["platform_folders"]
+        paths = config[self.platform_name]["platform_folders"]
         for path in paths:
             path_listbox.insert(tk.END, f"{path}")
 
@@ -599,38 +643,83 @@ class PropertiesWindow(tk.Toplevel):
         if self.on_update_callback:
             self.on_update_callback()
 
-def launch_game_threaded(platform_name, game_name, game_path, on_game_end=None):     
-    def execute():   
-        launched = True
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        start = time.time()
-        process = subprocess.Popen(game_path)
-        process.wait()
-        end = time.time()
-        launched = False
-        dur_min = (end - start) / 60
-        
-        new_session = {"Start": now, "Tiempo": round(dur_min, 2)}
+    def update_tab_name(self):
+        if self.on_update_tab:
+            new_name = self.tab_name_var.get().strip().capitalize()
+            if new_name:
+                config[new_name] = config.pop(self.platform_name, {})
+                
+                try: 
+                    index = config["global"]["tab_order"].index(self.platform_name) 
+                    config["global"]["tab_order"][index] = new_name
+                except:
+                    pass
+                
+                pre_name = self.platform_name
+                self.platform_name = new_name
+                
+                self.save_config()
+            self.on_update_tab(new_name, pre_name)
             
-        game_times = config[platform_name].setdefault("game_times", {})
-        game_times.setdefault(game_name, []).append(new_session)
-        
-        game_times[game_name] = game_times[game_name][-5:]
-            
-        game_total_times= config[platform_name].setdefault("game_total_times", {})
-        game_total_times.setdefault(game_name, 0.0)
-        game_total_times[game_name] += round(dur_min, 2)
-                 
-            
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(config, f, indent=4)
-            
-        if on_game_end:
-            on_game_end()
-    
-    
-    thread = threading.Thread(target= execute)
-    thread.start()
+class GameLauncherController:
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if not cls._instance:
+            cls._instance = super(GameLauncherController, cls).__new__(cls, *args, **kwargs)
+        return cls._instance
+
+    def __init__(self):
+        self.launched = False  # Indicador de si hay un juego lanzado
+        self.lock = threading.Lock()  # Lock para sincronizar el acceso
+
+    def launch_game(self, platform_name, game_name, game_path, on_game_end=None):
+        def execute():
+            # Usamos el lock para asegurarnos de que no se modifique el estado de launched de forma concurrente
+            with self.lock:
+                allow_multiple = config["global"].get("allow_multiple_games", False)
+
+                if not allow_multiple:
+                    if self.launched:
+                        logging.info("Ya hay un juego en ejecución, no se puede iniciar otro.")
+                        return
+
+                # Marcar que el juego está lanzado
+                self.launched = True
+
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            start = time.time()
+
+            # Lanza el juego en un proceso nuevo
+            process = subprocess.Popen(game_path)
+            process.wait()
+
+            end = time.time()
+            dur_min = (end - start) / 60  # Tiempo transcurrido en minutos
+
+            # Guardamos los tiempos en la configuración
+            new_session = {"Start": now, "Tiempo": round(dur_min, 2)}
+            game_times = config[platform_name].setdefault("game_times", {})
+            game_times.setdefault(game_name, []).append(new_session)
+            game_times[game_name] = game_times[game_name][-5:]
+
+            game_total_times = config[platform_name].setdefault("game_total_times", {})
+            game_total_times.setdefault(game_name, 0.0)
+            game_total_times[game_name] += round(dur_min, 2)
+
+            with open(CONFIG_FILE, "w") as f:
+                json.dump(config, f, indent=4)
+
+            # Reseteamos el estado de launched después de que el juego haya terminado
+            with self.lock:
+                self.launched = False
+
+            if on_game_end:
+                on_game_end()
+
+        # Ejecutamos la lógica de lanzamiento del juego en un hilo separado
+        thread = threading.Thread(target=execute)
+        thread.start()
 
 def extract_icon(path, size=(16, 16)):
     os.makedirs("icons_cache", exist_ok=True)
@@ -659,15 +748,15 @@ def extract_icon(path, size=(16, 16)):
     
     return None
 
-
 def main():
     if "--launch" in sys.argv and "--platform" in sys.argv:
         game_name = sys.argv[sys.argv.index("--launch") + 1]
         platform_name = sys.argv[sys.argv.index("--platform") + 1]
         game_path = config.get(platform_name, {}).get("game_list", {}).get(game_name)
+        launcher_controler = GameLauncherController()
         if game_path:
-            if not launched:
-                launch_game_threaded(platform_name, game_name, game_path)
+                
+                launcher_controler.launch_game_threaded(platform_name, game_name, game_path)
         else:
             print("No se encontró el juego.")
     else:

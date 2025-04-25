@@ -1,15 +1,9 @@
 dist/
 icons_cache/
 __pycache__
-<<<<<<< HEAD
 pruebas.py 
 *.bat
 *.txt
 *.spec
 *.json
 *.log
-=======
-*.txt
-*.spec
-*.log
->>>>>>> feature/cambios-del-dia

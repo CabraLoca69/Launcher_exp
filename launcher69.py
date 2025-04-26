@@ -171,48 +171,11 @@ class DraggableNotebook(tb.Notebook):
         self.bind('<ButtonRelease-1>', self.on_button_release)
         self.bind('<B1-Motion>', self.on_mouse_move)
         self.bind("<Button-3>", self.on_right_click)
+        self.bind("<<NotebookTabChanged>>", self.on_tab_change)
       
         if not self.tabs():
             self.empty_frame.pack(fill="both", expand=True)
-
-    def show_menu(self, platform_name, x_root, y_root):
-        try:
-            game_tree = self.platform_trees[platform_name]
-            self.menu_popup = CustomPopupMenu(self, game_tree)
-        except:
-            self.menu_popup= CustomPopupMenu(self, None)
-        
-        if platform_name:  
-            self.menu_popup.add_button("🞧 Agregar plataforma", 25, "success-outline", lambda: self.new_platform(False))
-            self.menu_popup.add_button("🗑 Eliminar plataforma", 25, "danger-outline", self.remove_tab)
-            self.menu_popup.add_button("⚙ Propiedades", 25, "info-outline", lambda: self.open_properties(self.tab(self._active, "text")))
-        else:
-            self.menu_popup.add_button("🞧 Agregar plataforma", 25, "success-outline", lambda: self.new_platform(False))
-        
-        self.menu_popup.show(x_root, y_root)
-  
-    def open_properties(self, platform_name):
-        self.properties = True
-        self.menu_popup.destroy()
-        def refresh_tree():
-            self.loader.update_game_list(platform_name, self.platform_trees[platform_name])
-            return
-        
-        def update_tab(new_name, pre_name):
-            for tab_id in self.tabs():
-                if self.tab(tab_id, "text") == pre_name:
-                    self.tab(tab_id, text= new_name)
-
-            self.platform_trees[new_name] = self.platform_trees.pop(pre_name, {})
-                                        
-            return
-        
-        def update_destroy():
-            self.properties = False
-        
-        self.properties_window = PropertiesWindow(self, platform_name, on_update_callback= refresh_tree, on_update_tab=update_tab, on_destroy_update= update_destroy)
-        self.properties_window.pack()        
-            
+         
     def on_button_press(self, event):
         try:
             self.menu_popup.destroy()
@@ -248,6 +211,14 @@ class DraggableNotebook(tb.Notebook):
             
             except:  
                 self.show_menu(None, event.x_root, event.y_root) 
+
+    def on_tab_change(self, event):
+        try:     
+            selected_tab_text = self.tab(self.select(), "text")
+            config["global"]["last_selected_tab"]= selected_tab_text
+            self.save_config()
+        except:
+            pass
             
     def save_config(self):
         with open(CONFIG_FILE, "w") as f:
@@ -257,6 +228,15 @@ class DraggableNotebook(tb.Notebook):
         for platforms in config.get("global", {}).get("tab_order", []):
             if platforms in config:
                 self.add_platform(platforms, reload)
+        
+        last_tab_text = config["global"].get("last_selected_tab")
+        if not last_tab_text:
+            return
+        
+        for tab_id in self.tabs():
+            if self.tab(tab_id, "text") == last_tab_text:
+                self.select(tab_id)
+                break
 
     def new_platform(self, reload): # agrega una pestaña nueva en el notebook con el nombre de la plataforma ingresado por el usuario
         try:
@@ -311,305 +291,48 @@ class DraggableNotebook(tb.Notebook):
         del config[platform_name]
         self.save_config()
 
-class GamePlatformFrame(ttk.Frame):
-    def __init__(self, master, platform_name, *args, **kwargs):
-        super().__init__(master, *args, **kwargs)
-        self.FAVORITE_LIMIT = 5
-        self.platform_name = platform_name
-        self.menu = False
-        self.loader = loader()
-        self.img = Image.open("icons/no_icon.ico").resize((16, 16), Image.LANCZOS)
-        self.default_icon= ImageTk.PhotoImage(self.img)   
+    def show_menu(self, platform_name, x_root, y_root):
+        try:
+            game_tree = self.platform_trees[platform_name]
+            self.menu_popup = CustomPopupMenu(self)
+        except:
+            self.menu_popup= CustomPopupMenu(self)
         
-        self.rowconfigure(0, weight=0)
-        self.rowconfigure(1, weight=1)
-        self.columnconfigure(1, weight=1)
-        
-        # Campo de búsqueda arriba del árbol de juegos
-        self.search_var = tk.StringVar()
-        search_entry = ttk.Entry(self, textvariable=self.search_var)
-        search_entry.grid(row=0, column=0, padx=(10, 5), pady=(10, 0), sticky="ew")
-        
-        search_frame = tb.Frame(self)
-        search_frame.grid(row=0, column=0, padx=(10, 5), pady=(10, 0), sticky="ew")
-
-        search_entry = ttk.Entry(search_frame, textvariable=self.search_var)
-        search_entry.pack(side="left", fill="x", expand=True)
-
-        btn_clear = tb.Button(search_frame, text="📂", bootstyle="secondary", command=lambda: self.update_game_list(self.platform_name, self.game_tree))
-        #btn_clear.pack(side="right", padx=(5, 0))
-                
-        # Árbol de juegos a la izquierda
-        self.game_tree = ttk.Treeview(self, show="tree", selectmode="browse", height=15)
-        self.game_tree.grid(row=1, column=0, padx=(10, 5), pady=10, sticky="nsw")       
-        # armar la forma de los favoritos
-        # separar por mes?
-        # Panel de contenido a la derecha
-        self.game_info_panel = tb.Frame(self, relief="ridge", padding=10)
-        self.game_info_panel.grid(row=0, column=1, rowspan=2, padx=(5, 10), pady=10, sticky="nsew")
-
-        # Frame para el contenido del panel
-        self.details_frame = tb.Frame(self.game_info_panel)
-        self.details_frame.pack(fill="both", expand=True, padx=10, pady=10)
-                
-        # Vincular búsqueda en vivo
-        search_entry.bind("<KeyRelease>", lambda event: self.filter_games(event, self.search_var))
-
-        # binds del arbol
-        self.game_tree.bind("<Double-Button-1>", lambda event: self.double_click_on_game_event(event))
-        self.game_tree.bind("<Button-1>", lambda event: self.on_game_click(event))
-        self.game_tree.bind("<Button-3>", lambda event: self.on_game_right_click(event))
-
-    def show_game_details(self, game_name, item_id):
-        platform_name = self.platform_name
-        # Limpiar el frame anterior
-        self.clean_info()
-
-        # Obtener datos del config
-        total_time = config.get(platform_name, {}).get("game_total_times", {}).get(game_name, 0.0)
-        sessions = list(reversed(config.get(platform_name, {}).get("game_times", {}).get(game_name, [])))
-
-        # === Barra superior ===
-        top_bar = tb.Frame(self.details_frame, padding=5)
-        top_bar.pack(fill="x", pady=(0, 10))
-        
-        # Botón "Jugar"
-        btn_play = tb.Button(top_bar, text="▶ Jugar", bootstyle="success-outline", width=12,
-                             command= self.launch_game).pack(side="left", padx=5, pady=5)
-        
-        # === Ícono + nombre + tiempo de juego ===
-        icon = self.game_tree.item(item_id, "image")  # image es el ID, lo usás como referencia
-        total_time = config.get(platform_name, {}).get("game_total_times", {}).get(game_name, 0.0)
-        formatted_time = f" - {round(total_time/60 , 2)} horas"
-        
-        game_name_label = tk.Label(top_bar, text=f" {game_name}{formatted_time}", font=("Arial", 12, "bold"), image=icon, compound="left")
-        game_name_label.image = icon  # Evita que la imagen sea garbage collected
-        game_name_label.pack(side="left", padx=10)
-        
-         # === Botones a la derecha ===
-        right_buttons = tb.Frame(top_bar)
-        right_buttons.pack(side="right", padx=5)
-        
-        btn_props = tb.Button(right_buttons, text="⚙", width=4, bootstyle="info-outline", command= lambda: self.show_menu(game_name, btn_props.winfo_rootx() - 138 , btn_props.winfo_rooty() + btn_props.winfo_height() + 5, True))
-        btn_fav = tb.Button(right_buttons, text="★", width=4, bootstyle="warning-outline", command= lambda: self.toggle_favorite(game_name))        
-        btn_extra = tb.Button(right_buttons, text="⋯", width=4, bootstyle="info-outline", command=lambda: self.open_notes_window(game_name))
-                
-        for btn in (btn_props, btn_fav, btn_extra):
-            btn.pack(side="right", padx=2)
-    
-        # === Info de juego ===
-        info_frame = tk.Frame(self.details_frame)
-        info_frame.pack(fill="both", expand=True)
-        tk.Label(info_frame, text="Últimas sesiones:", font=("Arial", 12, "bold")).pack(anchor="w", padx=10, pady=(10, 0))
-
-        if not sessions:
-            tk.Label(info_frame, text=f"No hay sesiones registradas").pack(anchor="w", padx=20)
+        if platform_name:  
+            self.menu_popup.add_button("🞧 Agregar plataforma", 25, "success-outline", lambda: self.new_platform(False))
+            self.menu_popup.add_button("🗑 Eliminar plataforma", 25, "danger-outline", self.remove_tab)
+            self.menu_popup.add_button("⚙ Propiedades", 25, "info-outline", lambda: self.open_properties(self.tab(self._active, "text")))
         else:
-            for session in sessions:
-                total_time= session['Tiempo']
-                hours = int(total_time // 60)
-                minutes = int(total_time % 60)
-                formatted_time = f"{hours} horas : {minutes} minutos"
-                tk.Label(info_frame, text=f"{session['Start']} - {formatted_time}").pack(anchor="w", padx=20)
-
-    def open_notes_window(self, game_name):
-        NotesWindow(self, game_name, notas)
-
-    def show_menu(self, game_name, x_root , y_root, btn_props):
-        platform_name = self.platform_name
-        menu = CustomPopupMenu(self, self.game_tree)
+            self.menu_popup.add_button("🞧 Agregar plataforma", 25, "success-outline", lambda: self.new_platform(False))
         
-        if game_name:
-            if not btn_props:
-                menu.add_button("▶ Jugar",25 , "success-outline", self.launch_game)
-            
-            menu.add_button("★ Favoritos", 25, "light-outline", lambda: self.toggle_favorite(game_name))
-            menu.add_button("⤓ Crear acceso directo", 25, "light-outline", lambda: self.create_direct_access(
-                            game_name, os.path.abspath(sys.argv[0]), config[platform_name]["game_list"][game_name], destino_desktop=True))
-            menu.add_button("📁 Archivos locales", 25, "light-outline", lambda: self.goto_folder(game_name))
-            menu.add_button("🗑 Eliminar juego", 25, "danger-outline", self.remove_exe)
-        
-        else:
-            menu.add_button("＋ Agregar juego", 25, "success-outline", self.add_exe)
-        
-        menu.show(x_root, y_root)
-
-    def save_config(self):
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(config, f, indent=4)
-
-    def create_direct_access(self, game_name, launcher_path, game_exe_path, destino_desktop=True):
-        platform = self.platform_name
-        shell = win32com.client.Dispatch("WScript.Shell")
-    
-        # Ruta donde se guardará el acceso directo
-        desktop = shell.SpecialFolders("Desktop") if destino_desktop else os.getcwd()
-        acceso_path = os.path.join(desktop, f"{os.path.splitext(game_name)[0]} Cl69.lnk")
-
-        # Crear acceso directo
-        acceso = shell.CreateShortCut(acceso_path)
-        acceso.Targetpath = launcher_path  # el .exe del launcher
-        acceso.Arguments = f'--launch "{game_name}" --platform "{platform}"'
-        acceso.WorkingDirectory = os.path.dirname(launcher_path)
-        acceso.IconLocation = game_exe_path  # Obtiene el ícono directamente del .exe del juego
-        acceso.save()      
-
-    def launch_game(self): # lanza el ejecutable seleccionado
-        platform_name = self.platform_name
-        game_tree = self.game_tree
-        selected = game_tree.selection()
-        gamelaunch = GameLauncherController()
-        if selected:
-            item_id = selected[0]
-            game_name = game_tree.item(item_id, "values")[0]
-            game_path = config[platform_name]["game_list"].get(game_name)
-            if game_path:
-                gamelaunch.launch_game(platform_name, game_name, game_path, on_game_end=lambda: self.loader.update_game_list(platform_name, self.game_tree))
-            else:
-                messagebox.showwarning("Atención", "No se pudo encontrar el juego")
-        else:
-            messagebox.showwarning("Atención", "Selecciona un juego para lanzar")             
-    
-    def add_exe(self):
-        platform_name = self.platform_name
-        exe = filedialog.askopenfilename(title="Selecciona un ejecutable")
-        if exe:
-            exe_name = os.path.splitext(os.path.basename(exe))[0]
-            
-            platform = config.setdefault(platform_name, {})
-            game_list = platform.setdefault("game_list", {})
-            
-            game_list[exe_name] = exe
-            self.save_config()
-            self.loader.update_game_list(platform_name, self.game_tree)
-            
-    def toggle_favorite(self, game_name):
-        platform_name = self.platform_name
-        favorites = config[platform_name].setdefault("favorites", [])
-
-        if game_name in favorites:
-            favorites.remove(game_name)
-        else:
-            if len(favorites) >= self.FAVORITE_LIMIT:
-                messagebox.showinfo("Límite alcanzado", f"Solo se permiten {self.FAVORITE_LIMIT} favoritos por plataforma.")
-                return
-            favorites.append(game_name)
-            
-        self.save_config()
-
-    def update_game_list(self, platform_name, game_tree):
-        self.loader.grouped = not self.loader.grouped
-        self.loader.update_game_list(platform_name, game_tree) 
-           
-    def remove_exe(self): # elimina el ejecutable DE LA LISTA
-        platform_name = self.platform_name
-        game_tree = self.game_tree
-        selected_items = game_tree.selection()
-        if selected_items:
-            confirm = Messagebox.yesno(title="Eliminar juego", message=f"Atencion, estas por elminar un juego", alert=True, parent=self)
-            if confirm == "Yes":
-                for item_id in selected_items:
-                    game_name = game_tree.item(item_id, "values")[0]  # El texto del ítem (nombre del juego)
-
-                    game_path = config[platform_name]["game_list"].get(game_name)
-                    self.loader.remove_game_icon(game_path)
-                
-                    config[platform_name]["game_list"].pop(game_name, None)
-                    config[platform_name].get("game_times", {}).pop(game_name, None)
-                    config[platform_name].get("game_total_times").pop(game_name, None)
-                    try:
-                        config[platform_name]["favorites"].remove(game_name)
-                    except:
-                        pass
-                    
-                    self.clean_info()
-                    game_tree.delete(item_id)
-                    
-                self.save_config()
-            else: 
-                pass
-        else:
-            messagebox.showwarning("Atención", "Selecciona un juego para eliminar de la lista")
-            
-    def filter_games(self, event, search_var):
-        platform_name = self.platform_name
-        game_tree = self.game_tree
-        search_text = search_var.get().lower()
-    
-        game_tree.delete(*game_tree.get_children())
-
-        if not hasattr(game_tree, "icon_images"):
-            game_tree.icon_images = {}
-
-        if not search_text:
-            self.loader.grouped = True
-            self.loader.update_game_list(platform_name, game_tree)  # agrupado
+        self.menu_popup.show(x_root, y_root)
+  
+    def open_properties(self, platform_name):
+        self.properties = True
+        self.menu_popup.destroy()
+        def refresh_tree():
+            self.loader.update_game_list(platform_name, self.platform_trees[platform_name])
             return
-
-        results_parent = game_tree.insert("", "end", text="🔍 Resultados", open=True)
-
-        game_list = config.get(platform_name, {}).get("game_list", {})
-        for game_name, game_path in game_list.items():
-            if search_text in game_name.lower():
-                icon = extract_icon(game_path) or self.default_icon
-                game_tree.icon_images[game_name] = icon
-                base_name = os.path.splitext(game_name)[0]
-                game_tree.insert(results_parent, "end", iid=game_name, text="", image=icon, values=(base_name,))
-
-    def goto_folder(self, game_name):
-        platform_name = self.platform_name
-        path= os.path.dirname(config[platform_name]["game_list"][game_name])
-        os.startfile(path)
-
-    def on_game_click(self, event):
-        game_tree = self.game_tree
-        item_id = game_tree.identify_row(event.y) 
-
-        if item_id:
-            self.show_game_details(game_tree.item(item_id, "values")[0], item_id)
-            game_tree.selection_set(item_id) # selecciona el item clickeado
-            return item_id
         
-        else:
-            # Clic fuera de cualquier ítem → prevenimos selección
-            game_tree.selection_remove(game_tree.selection())
-            self.clean_info()
-            return None  # Esto cancela el comportamiento por defecto
+        def update_tab(new_name, pre_name):
+            for tab_id in self.tabs():
+                if self.tab(tab_id, "text") == pre_name:
+                    self.tab(tab_id, text= new_name)
 
-    def double_click_on_game_event(self, event):
-        platform_name = self.platform_name
-        game_tree = self.game_tree
-        item_id = game_tree.identify_row(event.y)
+            self.platform_trees[new_name] = self.platform_trees.pop(pre_name, {})                            
+            return
         
-        if item_id: 
-                self.launch_game(platform_name)
-                return
-   
-    def on_game_right_click(self, event):
-        game_tree = self.game_tree
-        item_id = self.on_game_click(event)
-        x, y = event.x_root, event.y_root
+        def update_destroy():
+            self.properties = False
         
-        if item_id:          
-            # Obtener el nombre del juego desde el ítem seleccionado
-            game_tree.selection_set(item_id)
-            game_name = game_tree.item(item_id)["values"][0]            
-    
-            
-            # Mostrar el menú en la posición del puntero
-            self.show_menu(game_name, x , y, False)
-        else:
-            game_tree.selection_remove(*game_tree.selection())
-            self.show_menu(None, x , y, False)
-    
-    def clean_info(self):
-        for widget in self.details_frame.winfo_children():
-            widget.destroy()
-               
+        self.properties_window = PropertiesWindow(self, platform_name, self.platform_trees[platform_name], on_update_callback= refresh_tree, on_update_tab=update_tab, on_destroy_update= update_destroy)
+        self.properties_window.pack()        
+
 class PropertiesWindow(tk.Frame):
-    def __init__(self, parent, platform_name, on_update_callback=None, on_update_tab=None, on_destroy_update= None):
+    def __init__(self, parent, platform_name, game_tree, on_update_callback=None, on_update_tab=None, on_destroy_update= None):
         super().__init__(parent)
         self.platform_name = platform_name
+        self.game_tree = game_tree
         self.on_update_callback = on_update_callback
         self.on_update_tab = on_update_tab
         self.on_destroy_update = on_destroy_update
@@ -680,12 +403,17 @@ class PropertiesWindow(tk.Frame):
         path_listbox = self.path_listbox
         index = path_listbox.nearest(event.y)
         bbox = path_listbox.bbox(index)
-
         if bbox:
             x, y, width, height = bbox
             if y <= event.y <= y + height:
+                path_listbox.selection_clear(0, tk.END)  # Limpiar por si acaso
+                path_listbox.selection_set(index)  
             # Clic válido, dejamos que Tkinter seleccione el ítem
                 return
+            else: 
+                for widget in self.winfo_children():
+                    if isinstance(widget, CustomPopupMenu):
+                        widget.destroy()
         # Clic fuera de cualquier ítem → prevenimos selección
         path_listbox.selection_clear(0, tk.END)
         return "break"  # Esto cancela el comportamiento por defecto
@@ -700,23 +428,59 @@ class PropertiesWindow(tk.Frame):
                 path_listbox.selection_clear(0, tk.END)  # Limpiar por si acaso
                 path_listbox.selection_set(index)        # Asegurar selección                
                 self.goto_folder()
+
+    def on_path_right_click(self, event):
+        path_listbox = self.path_listbox
+        index = path_listbox.nearest(event.y)  # Devuelve el índice más cercano al clic
+        bbox = path_listbox.bbox(index)        # Da las coordenadas del ítem
+        
+        if bbox:
+            x, y, width, height = bbox
+            if event.y >= y and event.y <= y + height:
+                # Seleccionamos el ítem clickeado
+                path_listbox.selection_clear(0, tk.END)  # Limpiar cualquier selección anterior
+                path_listbox.selection_set(index)        # Seleccionar el ítem clickeado
+                
+                menu = CustomPopupMenu(self, on_close_callback= self.menu_closed)  # Opciones del menú contextual
+                menu.add_button("📂 Ir a carpeta local", 20, "secondary", command= self.goto_folder)
+                menu.add_button("🗑️ Eliminar directorio",20, "🗑️ Eliminar directorio", command= self.remove_folder)
     
+                # Obtener las coordenadas del puntero
+                x, y = event.x_root, event.y_root
+    
+                # Mostrar el menú en la posición del puntero
+                menu.show(x, y)
+            else:
+                self.on_path_right_click_out(event)
+  
     def on_path_right_click_out(self, event):
-        menu = CustomPopupMenu(self)
+        menu = CustomPopupMenu(self, on_close_callback= self.menu_closed)
         menu.add_button("📂 Ir a carpeta local", 25, "secondary", command= self.goto_folder)
         x, y = event.x_root, event.y_root
         menu.show(x, y)
 
+    def save_config(self):
+        with open(CONFIG_FILE, "w") as f:
+            json.dump(config, f, indent=4)
+     
     def bind_click_outside(self):
         self.bind_all("<Button-1>", self.check_click_outside)
         self.bind_all("<Button-3>", self.check_click_outside)
+ 
+    def menu_closed(self, event):
+        if event:
+            self.check_click_outside(event)
 
     def check_click_outside(self, event):
         # Verifica si el clic fue fuera del frame
         widget = self.winfo_containing(event.x_root, event.y_root)
-        if not widget or not self._is_child_of(widget, self):
-            self.destroy_window()
 
+        # Si no clickeaste dentro de la PropertiesWindow ni dentro de un menú contextual
+        if not widget or not self._is_child_of(widget, self):
+            # Además: si no estás haciendo click dentro de un CustomPopupMenu
+            if not self._is_child_of(widget, CustomPopupMenu._instance) if hasattr(CustomPopupMenu, "_instance") else True:
+                self.destroy_window()
+            
     def _is_child_of(self, widget, parent):
         # Recorre hacia arriba para ver si el widget pertenece al frame
         while widget:
@@ -724,7 +488,12 @@ class PropertiesWindow(tk.Frame):
                 return True
             widget = widget.master
         return False
-
+    
+    def destroy_window(self):
+        self.destroy()
+        if self.on_destroy_update:
+            self.on_destroy_update()
+  
     def toggle_multiple_games(self):
         # Cambiar el valor de allow_multiple_games en el config
         current_value = config["global"].get("allow_multiple_games", False)
@@ -738,42 +507,6 @@ class PropertiesWindow(tk.Frame):
         self.loader.add_folder(self.platform_name)
         self.update_directory_list()
         self.update_game_list()
-    
-    def destroy_window(self):
-        self.destroy()
-        if self.on_destroy_update:
-            self.on_destroy_update()
-    
-    def save_config(self):
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(config, f, indent=4)
-    
-    def on_path_right_click(self, event):
-        path_listbox = self.path_listbox
-        index = path_listbox.nearest(event.y)  # Devuelve el índice más cercano al clic
-        bbox = path_listbox.bbox(index)        # Da las coordenadas del ítem
-        
-        
-        if bbox:
-            x, y, width, height = bbox
-            if event.y >= y and event.y <= y + height:
-                # Seleccionamos el ítem clickeado
-                path_listbox.selection_clear(0, tk.END)  # Limpiar cualquier selección anterior
-                path_listbox.selection_set(index)        # Seleccionar el ítem clickeado
-                menu = CustomPopupMenu(self)
-                # Opciones del menú contextual
-                menu.add_button("📂 Ir a carpeta local", 20, "secondary", command= self.goto_folder)
-                menu.add_button("🗑️ Eliminar directorio",20, "🗑️ Eliminar directorio", command= self.remove_folder)
-    
-                # Obtener las coordenadas del puntero
-                x, y = event.x_root, event.y_root
-    
-                # Mostrar el menú en la posición del puntero
-                menu.show(x, y)
-            else:
-                self.on_path_right_click_out(event)
-        else:
-            self.on_path_right_click_out(event)
 
     def goto_folder(self):
         path_listbox = self.path_listbox 
@@ -850,6 +583,375 @@ class PropertiesWindow(tk.Frame):
                 self.lift()
                 return
 
+class GamePlatformFrame(ttk.Frame):
+    def __init__(self, master, platform_name, *args, **kwargs):
+        super().__init__(master, *args, **kwargs)
+        self.FAVORITE_LIMIT = 5
+        self.platform_name = platform_name
+        self.menu = False
+        self.loader = loader()
+        self.img = Image.open("icons/no_icon.ico").resize((16, 16), Image.LANCZOS)
+        self.default_icon= ImageTk.PhotoImage(self.img)   
+        
+        self.rowconfigure(0, weight=0)
+        self.rowconfigure(1, weight=1)
+        self.columnconfigure(1, weight=1)
+        
+        # Campo de búsqueda arriba del árbol de juegos
+        self.search_var = tk.StringVar()
+        search_entry = ttk.Entry(self, textvariable=self.search_var)
+        search_entry.grid(row=0, column=0, padx=(10, 5), pady=(10, 0), sticky="ew")
+        
+        search_frame = tb.Frame(self)
+        search_frame.grid(row=0, column=0, padx=(10, 5), pady=(10, 0), sticky="ew")
+
+        search_entry = ttk.Entry(search_frame, textvariable=self.search_var)
+        search_entry.pack(side="left", fill="x", expand=True)
+
+        btn_clear = tb.Button(search_frame, text="📂", bootstyle="secondary", command=lambda: self.update_game_list(self.platform_name, self.game_tree))
+        #btn_clear.pack(side="right", padx=(5, 0))
+                
+        # Árbol de juegos a la izquierda
+        self.game_tree = ttk.Treeview(self, show="tree", selectmode="browse", height=15)
+        self.game_tree.grid(row=1, column=0, padx=(10, 5), pady=10, sticky="nsw")       
+        # armar la forma de los favoritos
+        # separar por mes?
+        # Panel de contenido a la derecha
+        self.game_info_panel = tb.Frame(self, relief="ridge", padding=10)
+        self.game_info_panel.grid(row=0, column=1, rowspan=2, padx=(5, 10), pady=10, sticky="nsew")
+
+        # Frame para el contenido del panel
+        self.details_frame = tb.Frame(self.game_info_panel)
+        self.details_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        self.show_favorites()
+       
+        
+        # Vincular búsqueda en vivo
+        search_entry.bind("<KeyRelease>", lambda event: self.filter_games(event, self.search_var))
+
+        # binds del arbol
+        self.game_tree.bind("<Double-Button-1>", lambda event: self.double_click_on_game_event(event))
+        self.game_tree.bind("<Button-1>", lambda event: self.on_game_click(event))
+        self.game_tree.bind("<Button-3>", lambda event: self.on_game_right_click(event))
+  
+    def on_game_click(self, event):
+        game_tree = self.game_tree
+        item_id = game_tree.identify_row(event.y) 
+
+        if item_id:
+            self.show_game_details(game_tree.item(item_id, "values")[0], item_id)
+            game_tree.selection_set(item_id) # selecciona el item clickeado
+            return 
+        
+        else:
+            # Clic fuera de cualquier ítem → prevenimos selección
+            game_tree.selection_remove(game_tree.selection())
+            self.show_favorites()
+            return None  # Esto cancela el comportamiento por defecto
+
+    def double_click_on_game_event(self, event):
+        platform_name = self.platform_name
+        game_tree = self.game_tree
+        item_id = game_tree.identify_row(event.y)
+        
+        if item_id: 
+                self.launch_game(platform_name)
+                return
+   
+    def on_game_right_click(self, event):
+        game_tree = self.game_tree
+        item_id = game_tree.identify_row(event.y) 
+        x, y = event.x_root, event.y_root
+        
+        if item_id:          
+            # Obtener el nombre del juego desde el ítem seleccionado
+            game_tree.selection_set(item_id)
+            game_name = game_tree.item(item_id)["values"][0]            
+    
+            
+            # Mostrar el menú en la posición del puntero
+            self.show_menu(game_name, x , y, False)
+        else:
+            game_tree.selection_remove(*game_tree.selection())
+            self.show_menu(None, x , y, False)
+   
+    def save_config(self):
+        with open(CONFIG_FILE, "w") as f:
+            json.dump(config, f, indent=4)
+
+    def create_direct_access(self, game_name, launcher_path, game_exe_path, destino_desktop=True):
+        platform = self.platform_name
+        shell = win32com.client.Dispatch("WScript.Shell")
+    
+        # Ruta donde se guardará el acceso directo
+        desktop = shell.SpecialFolders("Desktop") if destino_desktop else os.getcwd()
+        acceso_path = os.path.join(desktop, f"{os.path.splitext(game_name)[0]} Cl69.lnk")
+
+        # Crear acceso directo
+        acceso = shell.CreateShortCut(acceso_path)
+        acceso.Targetpath = launcher_path  # el .exe del launcher
+        acceso.Arguments = f'--launch "{game_name}" --platform "{platform}"'
+        acceso.WorkingDirectory = os.path.dirname(launcher_path)
+        acceso.IconLocation = game_exe_path  # Obtiene el ícono directamente del .exe del juego
+        acceso.save()      
+
+    def launch_game(self): # lanza el ejecutable seleccionado
+        platform_name = self.platform_name
+        game_tree = self.game_tree
+        selected = game_tree.selection()
+        gamelaunch = GameLauncherController()
+        if selected:
+            item_id = selected[0]
+            game_name = game_tree.item(item_id, "values")[0]
+            game_path = config[platform_name]["game_list"].get(game_name)
+            if game_path:
+                gamelaunch.launch_game(platform_name, game_name, game_path, on_game_end=lambda: self.loader.update_game_list(platform_name, self.game_tree))
+            else:
+                messagebox.showwarning("Atención", "No se pudo encontrar el juego")
+        else:
+            messagebox.showwarning("Atención", "Selecciona un juego para lanzar")             
+
+    def add_exe(self):
+        platform_name = self.platform_name
+        exe = filedialog.askopenfilename(title="Selecciona un ejecutable")
+        if exe:
+            exe_name = os.path.splitext(os.path.basename(exe))[0]
+            
+            platform = config.setdefault(platform_name, {})
+            game_list = platform.setdefault("game_list", {})
+            
+            game_list[exe_name] = exe
+            self.save_config()
+            self.loader.update_game_list(platform_name, self.game_tree)
+               
+    def remove_exe(self): # elimina el ejecutable DE LA LISTA
+        platform_name = self.platform_name
+        game_tree = self.game_tree
+        selected_items = game_tree.selection()
+        if selected_items:
+            confirm = Messagebox.yesno(title="Eliminar juego", message=f"Atencion, estas por elminar un juego", alert=True, parent=self)
+            if confirm == "Yes":
+                for item_id in selected_items:
+                    game_name = game_tree.item(item_id, "values")[0]  # El texto del ítem (nombre del juego)
+
+                    game_path = config[platform_name]["game_list"].get(game_name)
+                    self.loader.remove_game_icon(game_path)
+                
+                    config[platform_name]["game_list"].pop(game_name, None)
+                    config[platform_name].get("game_times", {}).pop(game_name, None)
+                    config[platform_name].get("game_total_times").pop(game_name, None)
+                    try:
+                        config[platform_name]["favorites"].remove(game_name)
+                    except:
+                        pass
+                    
+                    self.clean_info()
+                    game_tree.delete(item_id)
+                    
+                self.save_config()
+            else: 
+                pass
+        else:
+            messagebox.showwarning("Atención", "Selecciona un juego para eliminar de la lista")
+
+    def update_game_list(self, platform_name, game_tree):
+        self.loader.grouped = not self.loader.grouped
+        self.loader.update_game_list(platform_name, game_tree) 
+              
+    def filter_games(self, event, search_var):
+        platform_name = self.platform_name
+        game_tree = self.game_tree
+        search_text = search_var.get().lower()
+    
+        game_tree.delete(*game_tree.get_children())
+
+        if not hasattr(game_tree, "icon_images"):
+            game_tree.icon_images = {}
+
+        if not search_text:
+            self.loader.grouped = True
+            self.loader.update_game_list(platform_name, game_tree)  # agrupado
+            return
+
+        results_parent = game_tree.insert("", "end", text="🔍 Resultados", open=True)
+
+        game_list = config.get(platform_name, {}).get("game_list", {})
+        for game_name, game_path in game_list.items():
+            if search_text in game_name.lower():
+                icon = extract_icon(game_path) or self.default_icon
+                game_tree.icon_images[game_name] = icon
+                base_name = os.path.splitext(game_name)[0]
+                game_tree.insert(results_parent, "end", iid=game_name, text="", image=icon, values=(base_name,))
+  
+    def goto_folder(self, game_name):
+        platform_name = self.platform_name
+        path= os.path.dirname(config[platform_name]["game_list"][game_name])
+        os.startfile(path)
+                
+    def toggle_favorite(self, game_name):
+        platform_name = self.platform_name
+        favorites = config[platform_name].setdefault("favorites", [])
+
+        if game_name in favorites:
+            favorites.remove(game_name)
+        else:
+            if len(favorites) >= self.FAVORITE_LIMIT:
+                messagebox.showinfo("Límite alcanzado", f"Solo se permiten {self.FAVORITE_LIMIT} favoritos por plataforma.")
+                return
+            favorites.append(game_name)
+            
+        self.save_config()
+
+    def show_favorites(self):
+        self.clean_info()
+        details_panel = GameDetailsPanel(self.details_frame, self.platform_name, launcher_controller=self)
+        details_panel.show_favorites()
+        details_panel.pack(fill="both", expand=True)
+ 
+    def show_game_details(self, game_name, item_id):
+        self.clean_info()
+        details_panel = GameDetailsPanel(self.details_frame, self.platform_name, game_name, item_id, launcher_controller=self)
+        details_panel.show_game_details()
+        details_panel.pack(fill="both", expand=True)
+           
+    def open_notes_window(self, game_name):
+        NotesWindow(self, game_name, notas)
+
+    def show_menu(self, game_name, x_root , y_root, btn_props):
+        platform_name = self.platform_name
+        menu = CustomPopupMenu(self)
+        
+        if game_name:
+            if not btn_props:
+                menu.add_button("▶ Jugar",25 , "success-outline", self.launch_game)
+            
+            menu.add_button("★ Favoritos", 25, "light-outline", lambda: self.toggle_favorite(game_name))
+            menu.add_button("⤓ Crear acceso directo", 25, "light-outline", lambda: self.create_direct_access(
+                            game_name, os.path.abspath(sys.argv[0]), config[platform_name]["game_list"][game_name], destino_desktop=True))
+            menu.add_button("📁 Archivos locales", 25, "light-outline", lambda: self.goto_folder(game_name))
+            menu.add_button("🗑 Eliminar juego", 25, "danger-outline", self.remove_exe)
+        
+        else:
+            menu.add_button("＋ Agregar juego", 25, "success-outline", self.add_exe)
+        
+        menu.show(x_root, y_root)
+  
+    def clean_info(self):
+        for widget in self.details_frame.winfo_children():
+            widget.destroy()
+
+class GameDetailsPanel(tb.Frame):
+    def __init__(self, parent, platform_name, game_name=None, item_id=None, launcher_controller=None, **kwargs):
+        super().__init__(parent, **kwargs)
+        self.platform_name = platform_name
+        self.game_name = game_name
+        self.item_id = item_id
+        self.launcher_controller = launcher_controller
+        
+        self.icon = None
+    
+    def show_game_details(self):
+        self.clean_info()
+        game_tree = self.launcher_controller.game_tree
+
+        # Datos
+        total_time = config.get(self.platform_name, {}).get("game_total_times", {}).get(self.game_name, 0.0)
+        sessions = list(reversed(config.get(self.platform_name, {}).get("game_times", {}).get(self.game_name, [])))
+
+        # === Barra superior ===
+        top_bar = tb.Frame(self, padding=5)
+        top_bar.pack(fill="x", pady=(0, 10))
+
+        # Botón "Jugar"
+        tb.Button(top_bar, text="▶ Jugar", bootstyle="success-outline", width=12,
+                  command=self.launch_game).pack(side="left", padx=5, pady=5)
+
+        # Ícono + nombre
+        self.icon = game_tree.item(self.item_id, "image")
+        formatted_time = f" - {round(total_time/60, 2)} horas"
+
+        game_name_label = tk.Label(top_bar, text=f" {self.game_name}{formatted_time}",
+                                   font=("Arial", 12, "bold"), image=self.icon, compound="left")
+        game_name_label.image = self.icon
+        game_name_label.pack(side="left", padx=10)
+
+        # Botones derecha
+        right_buttons = tb.Frame(top_bar)
+        right_buttons.pack(side="right", padx=5)
+
+        btn_props = tb.Button(right_buttons, text="⚙", width=4, bootstyle="info-outline",
+                              command=self.show_props_menu)
+        btn_fav = tb.Button(right_buttons, text="★", width=4, bootstyle="warning-outline",
+                            command=self.toggle_favorite)
+        btn_extra = tb.Button(right_buttons, text="⋯", width=4, bootstyle="info-outline",
+                              command=self.open_notes)
+
+        for btn in (btn_props, btn_fav, btn_extra):
+            btn.pack(side="right", padx=2)
+
+        # === Info sesiones ===
+        info_frame = tk.Frame(self)
+        info_frame.pack(fill="both", expand=True)
+
+        tk.Label(info_frame, text="Últimas sesiones:", font=("Arial", 12, "bold")).pack(anchor="w", padx=10, pady=(10, 0))
+
+        if not sessions:
+            tk.Label(info_frame, text="No hay sesiones registradas").pack(anchor="w", padx=20)
+        else:
+            for session in sessions:
+                total_time = session['Tiempo']
+                hours = int(total_time // 60)
+                minutes = int(total_time % 60)
+                formatted_time = f"{hours} horas : {minutes} minutos"
+                tk.Label(info_frame, text=f"{session['Start']} - {formatted_time}").pack(anchor="w", padx=20)
+
+    def show_favorites(self):
+        tk.Label(self, text="★ Tus Favoritos ★", font=("Arial", 14, "bold")).pack(pady=10)
+
+        favorites = config.get(self.platform_name, {}).get("favorites", [])
+        game_list = config.get(self.platform_name, {}).get("game_list", {})
+
+        if not favorites:
+            tk.Label(self, text="No tienes juegos favoritos aún.").pack(pady=20)
+        else:
+            for game_name in favorites:
+                path = game_list.get(game_name)
+                if path:
+                    # Pequeña fila con ícono + nombre
+                    frame = tb.Frame(self)
+                    frame.pack(fill="x", padx=20, pady=5)
+
+                    icon = extract_icon(path)  # Función que ya usás para obtener íconos
+                    if icon:
+                        icon_label = tk.Label(frame, image=icon)
+                        icon_label.image = icon
+                        icon_label.pack(side="left", padx=5)
+
+                    tk.Label(frame, text=game_name, font=("Arial", 11)).pack(side="left", padx=5)
+
+                    # Botón rápido de jugar
+                    tb.Button(frame, text="▶", width=3, bootstyle="success-outline",
+                            command=lambda name=game_name: self.launch_game(name)).pack(side="right")
+
+    def clean_info(self):
+        for widget in self.winfo_children():
+            widget.destroy()
+
+    def launch_game(self, game_name=None):
+        game_name = game_name or self.game_name
+        self.launcher_controller.launch_game(game_name)
+
+    def toggle_favorite(self):
+        self.launcher_controller.toggle_favorite(self.game_name)
+
+    def open_notes(self):
+        self.launcher_controller.open_notes_window(self.game_name)
+
+    def show_props_menu(self):
+        x = self.winfo_rootx() + self.winfo_width() - 197
+        y = self.winfo_rooty() + 40
+        self.launcher_controller.show_menu(self.game_name, x, y, True)
+               
 class NotesWindow(tb.Toplevel):
     def __init__(self, parent, game_name, notes_dict, save_path="notas.json"):
         super().__init__(parent)
@@ -891,12 +993,11 @@ class NotesWindow(tb.Toplevel):
         with open(NOTES_FILE, "w", encoding="utf-8") as f:
             json.dump(self.notes_dict, f, ensure_ascii=False, indent=4)
 
-class CustomPopupMenu(tb.Frame):
-    def __init__(self, parent, game_tree=None, on_close_callback=None):
+class CustomPopupMenu(tb.Frame):    
+    def __init__(self, parent, on_close_callback=None):
         super().__init__(parent, bootstyle="secondary", relief="raised", borderwidth=1)
         self.parent = parent
         self.buttons = []
-        self.game_tree = game_tree
         self.on_close_callback = on_close_callback
         self._menu_open = False
 
@@ -921,35 +1022,34 @@ class CustomPopupMenu(tb.Frame):
 
         self._menu_open = True
 
-        self.parent.bind_all("<Button-1>", self._close_event, add="+")
-        self.parent.after(100, lambda: self.parent.bind_all("<Button-3>", self._close_event, add="+"))
+        self.after(100, self.bind_click_outside)
 
-        if self.game_tree:
-            self.game_tree.bind("<ButtonRelease-1>", self._tree_click_check, add="+")
+    def bind_click_outside(self):
+        self.bind_all("<Button-1>", self.check_click_outside)
+        self.bind_all("<Button-3>", self.check_click_outside)
 
-    def _close_event(self, event):
+    def check_click_outside(self, event):
+        # Verifica si el clic fue fuera del frame
         widget = self.winfo_containing(event.x_root, event.y_root)
+        if not widget or not self._is_child_of(widget, self):
+            self.destroy_menu(event)
+
+    def _is_child_of(self, widget, parent):
+        # Recorre hacia arriba para ver si el widget pertenece al frame
         while widget:
-            if widget == self:
-                return  # Click adentro del popup
+            if widget == parent:
+                return True
             widget = widget.master
-        self.destroy_menu()
+        return False
 
-    def _tree_click_check(self, event):
-        if self.game_tree:
-            row_id = self.game_tree.identify_row(event.y)
-            if not row_id:
-                self.destroy_menu()
-                self.game_tree.unbind("<ButtonRelease-1>")
-
-    def destroy_menu(self):
+    def destroy_menu(self, event):
         self._menu_open = False
         self.destroy()
         self.parent.unbind_all("<Button-1>")
         self.parent.unbind_all("<Button-3>")
         if self.on_close_callback:
-            self.on_close_callback()
-            
+            self.on_close_callback(event)
+                   
 class GameLauncherController:
     _instance = None
 

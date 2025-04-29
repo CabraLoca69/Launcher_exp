@@ -12,6 +12,7 @@ import win32ui
 import win32gui
 import win32con
 import logging
+import psutil
 from tkinter import filedialog, messagebox, ttk
 from ttkbootstrap.constants import *
 from ttkbootstrap.dialogs import Messagebox
@@ -21,8 +22,9 @@ from PIL import Image, ImageTk
 
 BASE_DIR = os.path.dirname(os.path.abspath(sys.argv[0]))
 CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
-NOTES_FILE = "notas.json"
-os.makedirs("icons_cache", exist_ok=True)
+NOTES_FILE = os.path.join(BASE_DIR, "notas.json")
+ICONS_CACHE_DIR = os.path.join(BASE_DIR, "icons_cache")
+os.makedirs(ICONS_CACHE_DIR, exist_ok=True)
 config_lock = threading.Lock()
 
 # Cargar configuración
@@ -41,7 +43,7 @@ else :
 if "global" not in config:
     config.setdefault("global", {}).setdefault("allow_multiple_games", False)
 
-class loader:
+class Loader:
     def __init__(self):
         self.img = Image.open("icons/no_icon.ico").resize((16, 16), Image.LANCZOS)
         self.default_icon= ImageTk.PhotoImage(self.img)
@@ -147,7 +149,163 @@ class loader:
     
     def save_config(self):
         with open(CONFIG_FILE, "w") as f:
-            json.dump(config, f, indent=4)    
+            json.dump(config, f, indent=4)
+    
+
+class LauncherUI:
+    def __init__(self):
+        self.root = tb.Window(themename="darkly")
+        self.root.title("Game Launcher")
+        self.root.iconbitmap("icons/icon.ico")
+        self.root.geometry("900x600")
+        self.root.minsize(600, 400)
+
+        self.root.grid_rowconfigure(0, weight=1)  # Notebook se expande
+        self.root.grid_columnconfigure(0, weight=1)
+        
+        # Notebook de plataformas
+        self.notebook = DraggableNotebook(self.root)
+        self.notebook.grid(row=0, column=0, sticky="nsew")
+        if config:
+            self.notebook.reload(True)
+
+        # Manager de sesiones 
+        self.session_manager = SessionManager(self.root, self)
+        self.restore_sessions()
+
+    def add_session(self, game_name, process):
+        self.session_manager.add_session(game_name, process)
+
+    def restore_sessions(self):
+        sessions = config["global"].get("actual_sessions", {})
+        for game_name, data in sessions.items():
+            pid = data["pid"]
+            start_time_str = data.get("start_time")
+            start_time = datetime.fromisoformat(start_time_str) if start_time_str else datetime.now()
+            try:
+                process = psutil.Process(pid)
+                if process.is_running():
+                    self.add_session(game_name, process, start_time)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+
+    def start(self):
+        self.root.mainloop()
+
+class SessionManager:
+    def __init__(self, parent, ui):
+        self.parent = parent
+        self.launcherui = ui
+        self.frame = tb.Frame(parent)
+        self.sessions = {}  # Diccionario para guardar info de sesiones activas
+
+    def add_session(self, game_name, process, start_time = None):
+        if not start_time:
+            start_time = datetime.now()
+        if not self.sessions:
+            self.show()
+        
+        session_frame = tb.Frame(self.frame, bootstyle="secondary", padding=10)
+        session_frame.pack(fill="x", pady=5)
+
+        top_frame = tb.Frame(session_frame)
+        top_frame.pack(fill="x")
+
+        # Nombre del juego
+        name_label = tb.Label(
+            top_frame,
+            text=f"🎮 {game_name}",
+            font=("Segoe UI", 11, "bold"),
+            anchor="w",
+            bootstyle="light"
+        )
+        name_label.pack(side="left", padx=(0, 10))
+        
+        # Botón de cerrar ❌
+        close_btn = tb.Button(
+            top_frame,
+            text="❌",
+            bootstyle="danger-outline",
+            width=3,
+            command=lambda: self.force_close(process.pid)
+        )
+        close_btn.pack(side="right", padx=(10, 0))
+        
+        # Tiempo de sesión
+        time_label = tb.Label(
+            top_frame,
+            text="🕒 0 min",
+            font=("Segoe UI", 10),
+            anchor="e",
+            bootstyle="light"
+        )
+        time_label.pack(side="right")
+
+        start_time = datetime.now()
+
+        # Guardar los datos de la sesión
+        self.sessions[process.pid] = {
+            "frame": session_frame,
+            "name_label": name_label,
+            "time_label": time_label,
+            "start_time": start_time,
+            "process": process
+        }
+
+        self.update_session(process.pid, game_name)
+        self.monitor_process(process.pid)
+
+    def update_session(self, pid, game_name):
+        session = self.sessions.get(pid)
+        
+        elapsed = datetime.now() - session["start_time"]
+        minutes = elapsed.seconds // 60
+        session["time_label"].configure(text=f"🕒 {minutes} min")
+
+        # Actualizar de nuevo en 60 segundos
+        session["frame"].after(60000, lambda: self.update_session(pid))
+        
+    def monitor_process(self, pid):
+        session = self.sessions.get(pid)
+
+        process = session["process"]
+        if process.poll() is not None:
+            # El proceso terminó, eliminar la sesión
+            session["frame"].destroy()
+            del self.sessions[pid]
+            if not self.sessions:
+                self.hide()
+            return
+
+        # Volver a chequear en 2 segundos
+        session["frame"].after(2000, lambda: self.monitor_process(pid))         
+    
+    def force_close(self, pid):
+        session = self.sessions.get(pid)
+        if not session:
+            return
+
+        process = session["process"]
+        try:
+            process.terminate()  # Mata el proceso
+        except Exception as e:
+            print(f"Error cerrando proceso: {e}")
+
+        session["frame"].destroy()
+        del self.sessions[pid]
+
+        if not self.sessions:
+            self.hide()
+        
+    def show(self):
+        self.frame.grid(row=1, column=0, sticky="ew", padx=10, pady=(5, 5))
+        self.parent.grid_rowconfigure(0, weight=1)
+        self.parent.grid_rowconfigure(1, weight=0)
+
+    def hide(self):
+        self.frame.grid_remove()
+        self.parent.grid_rowconfigure(0, weight=1)
+        self.parent.grid_rowconfigure(1, weight=0)
 
 class DraggableNotebook(tb.Notebook):
     def __init__(self, master=None, **kw):
@@ -157,7 +315,7 @@ class DraggableNotebook(tb.Notebook):
         self.properties = False
         self.FAVORITE_LIMIT = 5
         self.platform_trees = {}
-        self.loader = loader()
+        self.loader = Loader()
         self.img = Image.open("icons/no_icon.ico").resize((16, 16), Image.LANCZOS)
         self.default_icon= ImageTk.PhotoImage(self.img)     
                         
@@ -172,7 +330,7 @@ class DraggableNotebook(tb.Notebook):
         self.bind('<B1-Motion>', self.on_mouse_move)
         self.bind("<Button-3>", self.on_right_click)
         self.bind("<<NotebookTabChanged>>", self.on_tab_change)
-      
+                    
         if not self.tabs():
             self.empty_frame.pack(fill="both", expand=True)
          
@@ -221,8 +379,7 @@ class DraggableNotebook(tb.Notebook):
             pass
             
     def save_config(self):
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(config, f, indent=4)
+        Loader().save_config()
 
     def reload(self, reload):
         for platforms in config.get("global", {}).get("tab_order", []):
@@ -336,7 +493,7 @@ class PropertiesWindow(tk.Frame):
         self.on_update_callback = on_update_callback
         self.on_update_tab = on_update_tab
         self.on_destroy_update = on_destroy_update
-        self.loader = loader()
+        self.loader = Loader()
         
         self.build_ui()
 
@@ -443,7 +600,7 @@ class PropertiesWindow(tk.Frame):
                 
                 menu = CustomPopupMenu(self, on_close_callback= self.menu_closed)  # Opciones del menú contextual
                 menu.add_button("📂 Ir a carpeta local", 20, "secondary", command= self.goto_folder)
-                menu.add_button("🗑️ Eliminar directorio",20, "🗑️ Eliminar directorio", command= self.remove_folder)
+                menu.add_button("🗑️ Eliminar directorio",20, "secondary", command= self.remove_folder)
     
                 # Obtener las coordenadas del puntero
                 x, y = event.x_root, event.y_root
@@ -455,13 +612,12 @@ class PropertiesWindow(tk.Frame):
   
     def on_path_right_click_out(self, event):
         menu = CustomPopupMenu(self, on_close_callback= self.menu_closed)
-        menu.add_button("📂 Ir a carpeta local", 25, "secondary", command= self.goto_folder)
+        menu.add_button("➕ Agregar Directorio", 25, "secondary", command= self.btn_new_path)
         x, y = event.x_root, event.y_root
         menu.show(x, y)
 
     def save_config(self):
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(config, f, indent=4)
+        Loader().save_config()
      
     def bind_click_outside(self):
         self.bind_all("<Button-1>", self.check_click_outside)
@@ -500,8 +656,7 @@ class PropertiesWindow(tk.Frame):
         config["global"]["allow_multiple_games"] = not current_value
         
         # Guardar el cambio
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(config, f, indent=4)
+        Loader().save_config()
     
     def btn_new_path(self):
         self.loader.add_folder(self.platform_name)
@@ -589,7 +744,7 @@ class GamePlatformFrame(ttk.Frame):
         self.FAVORITE_LIMIT = 5
         self.platform_name = platform_name
         self.menu = False
-        self.loader = loader()
+        self.loader = Loader()
         self.img = Image.open("icons/no_icon.ico").resize((16, 16), Image.LANCZOS)
         self.default_icon= ImageTk.PhotoImage(self.img)   
         
@@ -650,12 +805,11 @@ class GamePlatformFrame(ttk.Frame):
             return None  # Esto cancela el comportamiento por defecto
 
     def double_click_on_game_event(self, event):
-        platform_name = self.platform_name
         game_tree = self.game_tree
         item_id = game_tree.identify_row(event.y)
         
         if item_id: 
-                self.launch_game(platform_name)
+                self.launch_game()
                 return
    
     def on_game_right_click(self, event):
@@ -676,8 +830,7 @@ class GamePlatformFrame(ttk.Frame):
             self.show_menu(None, x , y, False)
    
     def save_config(self):
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(config, f, indent=4)
+        Loader().save_config()
 
     def create_direct_access(self, game_name, launcher_path, game_exe_path, destino_desktop=True):
         platform = self.platform_name
@@ -825,10 +978,10 @@ class GamePlatformFrame(ttk.Frame):
             if not btn_props:
                 menu.add_button("▶ Jugar",25 , "success-outline", self.launch_game)
             
-            menu.add_button("★ Favoritos", 25, "light-outline", lambda: self.toggle_favorite(game_name))
-            menu.add_button("⤓ Crear acceso directo", 25, "light-outline", lambda: self.create_direct_access(
+            menu.add_button("★ Favoritos", 25, "warning-outline", lambda: self.toggle_favorite(game_name))
+            menu.add_button("⤓ Crear acceso directo", 25, "info-outline", lambda: self.create_direct_access(
                             game_name, os.path.abspath(sys.argv[0]), config[platform_name]["game_list"][game_name], destino_desktop=True))
-            menu.add_button("📁 Archivos locales", 25, "light-outline", lambda: self.goto_folder(game_name))
+            menu.add_button("📁 Archivos locales", 25, "info-outline", lambda: self.goto_folder(game_name))
             menu.add_button("🗑 Eliminar juego", 25, "danger-outline", self.remove_exe)
         
         else:
@@ -839,7 +992,7 @@ class GamePlatformFrame(ttk.Frame):
     def clean_info(self):
         for widget in self.details_frame.winfo_children():
             widget.destroy()
-
+        
 class GameDetailsPanel(tb.Frame):
     def __init__(self, parent, platform_name, game_name=None, item_id=None, launcher_controller=None, **kwargs):
         super().__init__(parent, **kwargs)
@@ -937,9 +1090,8 @@ class GameDetailsPanel(tb.Frame):
         for widget in self.winfo_children():
             widget.destroy()
 
-    def launch_game(self, game_name=None):
-        game_name = game_name or self.game_name
-        self.launcher_controller.launch_game(game_name)
+    def launch_game(self):
+        self.launcher_controller.launch_game()
 
     def toggle_favorite(self):
         self.launcher_controller.toggle_favorite(self.game_name)
@@ -996,9 +1148,9 @@ class NotesWindow(tb.Toplevel):
 class CustomPopupMenu(tb.Frame):    
     def __init__(self, parent, on_close_callback=None):
         super().__init__(parent, bootstyle="secondary", relief="raised", borderwidth=1)
-        self.parent = parent
-        self.buttons = []
         self.on_close_callback = on_close_callback
+        self.parent = parent
+        self.buttons = []        
         self._menu_open = False
 
     def add_button(self, text, width, bootstyle, command):
@@ -1052,7 +1204,7 @@ class CustomPopupMenu(tb.Frame):
                    
 class GameLauncherController:
     _instance = None
-
+    
     def __new__(cls, *args, **kwargs):
         if not cls._instance:
             cls._instance = super(GameLauncherController, cls).__new__(cls, *args, **kwargs)
@@ -1061,6 +1213,9 @@ class GameLauncherController:
     def __init__(self):
         self.launched = False  # Indicador de si hay un juego lanzado
         self.lock = threading.Lock()  # Lock para sincronizar el acceso
+    
+    def set_launcher_ui(self, launcherui):
+        self.launcherui = launcherui    
 
     def launch_game(self, platform_name, game_name, game_path, on_game_end=None):
         def execute():
@@ -1078,11 +1233,26 @@ class GameLauncherController:
 
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             start = time.time()
+            
 
             # Lanza el juego en un proceso nuevo
             process = subprocess.Popen(game_path)
+            if self.launcherui:
+                self.launcherui.add_session(game_name, process)
+            """if self.launcherui == None:
+                    pid = process.pid
+                    start_time = datetime.now().isoformat()
+                    config["global"].setdefault("actual_sessions", {})[game_name] = {"pid": pid, "start_time": start_time}
+                    Loader().save_config()"""
+         
             process.wait()
-
+            """try:
+                if config["global"]["actual_sessions"][game_name]:
+                    del config["global"]["actual_sessions"][game_name]
+                    Loader().save_config()
+            except(KeyError):
+                pass"""
+            
             end = time.time()
             dur_min = (end - start) / 60  # Tiempo transcurrido en minutos
 
@@ -1096,9 +1266,8 @@ class GameLauncherController:
             game_total_times.setdefault(game_name, 0.0)
             game_total_times[game_name] += round(dur_min, 2)
 
-            with open(CONFIG_FILE, "w") as f:
-                json.dump(config, f, indent=4)
-
+            Loader().save_config()
+                
             # Reseteamos el estado de launched después de que el juego haya terminado
             with self.lock:
                 self.launched = False
@@ -1138,34 +1307,28 @@ def extract_icon(path, size=(16, 16)):
     return None
 
 def main():
+    launcherui = False
+    
     if "--launch" in sys.argv and "--platform" in sys.argv:
         game_name = sys.argv[sys.argv.index("--launch") + 1]
         platform_name = sys.argv[sys.argv.index("--platform") + 1]
         game_path = config.get(platform_name, {}).get("game_list", {}).get(game_name)
         launcher_controler = GameLauncherController()
+        #launcher_controler.set_launcher_ui(None)
         if game_path:
-                
+                #if launcherui:
+                    #launcher_controler.set_launcher_ui(launcherui)
+                    #simpledialog.askstring(game_name, platform_name)
                 launcher_controler.launch_game(platform_name, game_name, game_path)
+                
         else:
             print("No se encontró el juego.")
     else:
-        # Mostrar la interfaz
-        root = tb.Window(themename="darkly")
-        root.title("Game Launcher")
-        root.iconbitmap("icons/icon.ico")
-        root.geometry("900x600")
-        root.minsize(600, 400)
-        root.grid_rowconfigure(0, weight=1)
-        root.grid_columnconfigure(0, weight=1)
-
-        notebook = DraggableNotebook(root)
-        notebook.grid(row=0, column=0, sticky="nsew")
+        launcherui = LauncherUI()
+        launcher_controler = GameLauncherController()
+        launcher_controler.set_launcher_ui(launcherui)
+        launcherui.start()
         
-        # Recargo mis datos guardados en config si es que existen
-        if config:
-            notebook.reload(True)
-            
-        root.mainloop()
 
 if __name__ == "__main__":
     main()

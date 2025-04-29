@@ -151,7 +151,6 @@ class Loader:
         with open(CONFIG_FILE, "w") as f:
             json.dump(config, f, indent=4)
     
-
 class LauncherUI:
     def __init__(self):
         self.root = tb.Window(themename="darkly")
@@ -166,15 +165,15 @@ class LauncherUI:
         # Notebook de plataformas
         self.notebook = DraggableNotebook(self.root)
         self.notebook.grid(row=0, column=0, sticky="nsew")
-        if config:
-            self.notebook.reload(True)
-
+        
         # Manager de sesiones 
         self.session_manager = SessionManager(self.root, self)
-        self.restore_sessions()
 
-    def add_session(self, game_name, process):
-        self.session_manager.add_session(game_name, process)
+        if config:
+            self.notebook.reload(True)
+        
+    def add_session(self, game_name, process, start_time):
+        self.session_manager.add_session(game_name, process, start_time)
 
     def restore_sessions(self):
         sessions = config["global"].get("actual_sessions", {})
@@ -188,8 +187,16 @@ class LauncherUI:
                     self.add_session(game_name, process, start_time)
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
+    
+    def monitor_sessions(self):
+        def loop():
+            while True:
+                self.restore_sessions()
+                time.sleep(5)
+        threading.Thread(target=loop, daemon=True).start()
 
     def start(self):
+        self.monitor_sessions()
         self.root.mainloop()
 
 class SessionManager:
@@ -200,7 +207,9 @@ class SessionManager:
         self.sessions = {}  # Diccionario para guardar info de sesiones activas
 
     def add_session(self, game_name, process, start_time = None):
-        if not start_time:
+        if process.pid in self.sessions:
+            return  # Ya se está monitoreando esta sesión
+        if start_time is None:
             start_time = datetime.now()
         if not self.sessions:
             self.show()
@@ -241,8 +250,6 @@ class SessionManager:
         )
         time_label.pack(side="right")
 
-        start_time = datetime.now()
-
         # Guardar los datos de la sesión
         self.sessions[process.pid] = {
             "frame": session_frame,
@@ -256,20 +263,20 @@ class SessionManager:
         self.monitor_process(process.pid)
 
     def update_session(self, pid, game_name):
-        session = self.sessions.get(pid)
+        session = self.sessions.get(pid, game_name)
         
         elapsed = datetime.now() - session["start_time"]
         minutes = elapsed.seconds // 60
         session["time_label"].configure(text=f"🕒 {minutes} min")
 
         # Actualizar de nuevo en 60 segundos
-        session["frame"].after(60000, lambda: self.update_session(pid))
+        session["frame"].after(60000, lambda: self.update_session(pid, game_name))
         
     def monitor_process(self, pid):
         session = self.sessions.get(pid)
 
         process = session["process"]
-        if process.poll() is not None:
+        if not process.is_running() or process.status() == psutil.STATUS_ZOMBIE:
             # El proceso terminó, eliminar la sesión
             session["frame"].destroy()
             del self.sessions[pid]
@@ -379,7 +386,8 @@ class DraggableNotebook(tb.Notebook):
             pass
             
     def save_config(self):
-        Loader().save_config()
+        with open(CONFIG_FILE, "w") as f:
+                json.dump(config, f, indent=4)
 
     def reload(self, reload):
         for platforms in config.get("global", {}).get("tab_order", []):
@@ -617,7 +625,8 @@ class PropertiesWindow(tk.Frame):
         menu.show(x, y)
 
     def save_config(self):
-        Loader().save_config()
+        with open(CONFIG_FILE, "w") as f:
+                json.dump(config, f, indent=4)
      
     def bind_click_outside(self):
         self.bind_all("<Button-1>", self.check_click_outside)
@@ -656,7 +665,8 @@ class PropertiesWindow(tk.Frame):
         config["global"]["allow_multiple_games"] = not current_value
         
         # Guardar el cambio
-        Loader().save_config()
+        with open(CONFIG_FILE, "w") as f:
+                json.dump(config, f, indent=4)
     
     def btn_new_path(self):
         self.loader.add_folder(self.platform_name)
@@ -830,7 +840,8 @@ class GamePlatformFrame(ttk.Frame):
             self.show_menu(None, x , y, False)
    
     def save_config(self):
-        Loader().save_config()
+        with open(CONFIG_FILE, "w") as f:
+                json.dump(config, f, indent=4)
 
     def create_direct_access(self, game_name, launcher_path, game_exe_path, destino_desktop=True):
         platform = self.platform_name
@@ -1213,9 +1224,6 @@ class GameLauncherController:
     def __init__(self):
         self.launched = False  # Indicador de si hay un juego lanzado
         self.lock = threading.Lock()  # Lock para sincronizar el acceso
-    
-    def set_launcher_ui(self, launcherui):
-        self.launcherui = launcherui    
 
     def launch_game(self, platform_name, game_name, game_path, on_game_end=None):
         def execute():
@@ -1237,21 +1245,19 @@ class GameLauncherController:
 
             # Lanza el juego en un proceso nuevo
             process = subprocess.Popen(game_path)
-            if self.launcherui:
-                self.launcherui.add_session(game_name, process)
-            """if self.launcherui == None:
-                    pid = process.pid
-                    start_time = datetime.now().isoformat()
-                    config["global"].setdefault("actual_sessions", {})[game_name] = {"pid": pid, "start_time": start_time}
-                    Loader().save_config()"""
-         
+                    
+            pid = process.pid
+            start_time = datetime.now().isoformat()
+            config["global"].setdefault("actual_sessions", {})[game_name] = {"pid": pid, "start_time": start_time}
+            self.save_config()
+                    
             process.wait()
-            """try:
+            try:
                 if config["global"]["actual_sessions"][game_name]:
                     del config["global"]["actual_sessions"][game_name]
-                    Loader().save_config()
+                    self.save_config()
             except(KeyError):
-                pass"""
+                pass
             
             end = time.time()
             dur_min = (end - start) / 60  # Tiempo transcurrido en minutos
@@ -1266,7 +1272,8 @@ class GameLauncherController:
             game_total_times.setdefault(game_name, 0.0)
             game_total_times[game_name] += round(dur_min, 2)
 
-            Loader().save_config()
+            
+            self.save_config()
                 
             # Reseteamos el estado de launched después de que el juego haya terminado
             with self.lock:
@@ -1278,6 +1285,10 @@ class GameLauncherController:
         # Ejecutamos la lógica de lanzamiento del juego en un hilo separado
         thread = threading.Thread(target=execute)
         thread.start()
+
+    def save_config(self):
+        with open(CONFIG_FILE, "w") as f:
+                json.dump(config, f, indent=4)
 
 def extract_icon(path, size=(16, 16)):
     os.makedirs("icons_cache", exist_ok=True)
@@ -1307,26 +1318,19 @@ def extract_icon(path, size=(16, 16)):
     return None
 
 def main():
-    launcherui = False
-    
     if "--launch" in sys.argv and "--platform" in sys.argv:
         game_name = sys.argv[sys.argv.index("--launch") + 1]
         platform_name = sys.argv[sys.argv.index("--platform") + 1]
         game_path = config.get(platform_name, {}).get("game_list", {}).get(game_name)
         launcher_controler = GameLauncherController()
-        #launcher_controler.set_launcher_ui(None)
         if game_path:
-                #if launcherui:
-                    #launcher_controler.set_launcher_ui(launcherui)
-                    #simpledialog.askstring(game_name, platform_name)
-                launcher_controler.launch_game(platform_name, game_name, game_path)
-                
+            launcher_controler.launch_game(platform_name, game_name, game_path)
         else:
             print("No se encontró el juego.")
+            
     else:
         launcherui = LauncherUI()
         launcher_controler = GameLauncherController()
-        launcher_controler.set_launcher_ui(launcherui)
         launcherui.start()
         
 

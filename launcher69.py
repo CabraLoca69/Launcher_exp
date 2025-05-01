@@ -13,7 +13,7 @@ import win32gui
 import win32con
 import logging
 import psutil
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, ttk, StringVar, Toplevel
 from ttkbootstrap.constants import *
 from ttkbootstrap.dialogs import Messagebox
 from datetime import datetime
@@ -170,7 +170,7 @@ class LauncherUI:
         self.session_manager = SessionManager(self.root, self)
 
         if config:
-            self.notebook.reload(True)
+            self.notebook.reload()
         
     def add_session(self, game_name, process, start_time):
         self.session_manager.add_session(game_name, process, start_time)
@@ -320,6 +320,7 @@ class DraggableNotebook(tb.Notebook):
         self._active = None
         self.active_popup= None
         self.properties = False
+        self.input_open = False
         self.FAVORITE_LIMIT = 5
         self.platform_trees = {}
         self.loader = Loader()
@@ -328,8 +329,8 @@ class DraggableNotebook(tb.Notebook):
                         
         # este frame se usa cuando no hay tabs (plataformas)
         self.empty_frame = tb.Frame(self)
-        tb.Label(self.empty_frame, text="No hay plataformas configuradas").pack(pady=10)
-        tb.Button(self.empty_frame, text="Agregar directorio", command=lambda: self.new_platform(False)).pack()
+        tb.Label(self.empty_frame, text="🚫 No hay plataformas configuradas", font=("Segoe UI", 12, "bold"), bootstyle="warning").pack(pady=10)
+        tb.Button(self.empty_frame, text="🞧 Agregar plataforma", bootstyle="info-outline", width=25, command= self.ask_platform_name).pack()
                 
         # los comandos de las pestañas
         self.bind('<ButtonPress-1>', self.on_button_press, True)
@@ -339,7 +340,7 @@ class DraggableNotebook(tb.Notebook):
         self.bind("<<NotebookTabChanged>>", self.on_tab_change)
                     
         if not self.tabs():
-            self.empty_frame.pack(fill="both", expand=True)
+            self.pack_emptyframe()
          
     def on_button_press(self, event):
         try:
@@ -389,10 +390,10 @@ class DraggableNotebook(tb.Notebook):
         with open(CONFIG_FILE, "w") as f:
                 json.dump(config, f, indent=4)
 
-    def reload(self, reload):
-        for platforms in config.get("global", {}).get("tab_order", []):
-            if platforms in config:
-                self.add_platform(platforms, reload)
+    def reload(self):
+        for platform_name in config.get("global", {}).get("tab_order", []):
+            if platform_name in config:
+                self.add_platform(platform_name)
         
         last_tab_text = config["global"].get("last_selected_tab")
         if not last_tab_text:
@@ -403,39 +404,46 @@ class DraggableNotebook(tb.Notebook):
                 self.select(tab_id)
                 break
 
-    def new_platform(self, reload): # agrega una pestaña nueva en el notebook con el nombre de la plataforma ingresado por el usuario
-        try:
-            platform_name = simpledialog.askstring("Nueva Plataforma", "Nombre de la Plataforma:")
-            platform_name = platform_name.capitalize()
-        except:
-            pass
-        self.add_platform(platform_name, reload)
-        if platform_name:
-            if self.empty_frame.winfo_ismapped():
-                self.empty_frame.pack_forget()
-        config.setdefault("global", {})["tab_order"] = [self.tab(i, "text") for i in range(self.index("end"))]
-        self.save_config()
- 
-    def add_platform(self, platform_name, reload): # crea todo el notebook con las pestañas y listboxes necesarios para mostrar los juegos y directorios
-        if platform_name:
-            if not reload:
-                folder= self.loader.add_folder(platform_name)
-            else:
-                self.empty_frame.pack_forget()
-                folder= True
-        
+    def ask_platform_name(self):
+        if hasattr(self, "menu_popup") and self.menu_popup:
+            self.menu_popup.destroy()
+        if not self.input_open:
+            self.empty_frame.pack_forget()
+            self.input_open = True
+            self.input = InputDialog(self, prompt="Nombre de la Plataforma:", callback=self.new_platform, cancel_callback= self.pack_emptyframe).pack()
+                
+    def pack_emptyframe(self):
+        self.input_open = False 
+        if not self.tabs():
+            self.empty_frame.pack(fill="both", expand=True)
+               
+    def new_platform(self, platform_name):
+        self.input_open = False
+        if platform_name: 
+            folder = self.loader.add_folder(platform_name)
             if folder:
-                platform_frame = GamePlatformFrame(self, platform_name)
-                self.add(platform_frame, text= platform_name)
-                self.select(platform_frame)
-                self.platform_trees[platform_name] = platform_frame.game_tree
-                self.loader.update_game_list(platform_name, self.platform_trees[platform_name])
+                self.add_platform(platform_name)
+                config.setdefault("global", {})["tab_order"] = [self.tab(i, "text") for i in range(self.index("end"))]
+                self.save_config()
+ 
+    def add_platform(self, platform_name): # crea todo el notebook con las pestañas y listboxes necesarios para mostrar los juegos y directorios
+        if platform_name:
+            self.empty_frame.pack_forget()
+            platform_frame = GamePlatformFrame(self, platform_name)
+            self.add(platform_frame, text= platform_name)
+            self.select(platform_frame)
+            self.platform_trees[platform_name] = platform_frame.game_tree
+            self.loader.update_game_list(platform_name, self.platform_trees[platform_name])
+
+    def confirm_remove(self):
+        if hasattr(self, "menu_popup") and self.menu_popup:
+            self.menu_popup.destroy()
+        ConfirmDialog(self, title="Eliminar plataforma", message= "Atencion, estas por elminar una plataforma", callback=self.remove_tab).place(relx=0.5, rely=0.5, anchor="center")
              
-    def remove_tab(self): # elimina una pestaña (plataforma) seleccionada de el notebook y tambien la borra de la lista junto con todo su contenido
+    def remove_tab(self, confirmed): # elimina una pestaña (plataforma) seleccionada de el notebook y tambien la borra de la lista junto con todo su contenido
         if self._active is not None:
             platform_name= self.tab(self._active, option="text")
-            confirm = Messagebox.yesno(title="Eliminar pestaña", message=f"¿Estás seguro de que querés eliminar la pestaña '{platform_name}'?", alert=True, parent=self)
-            if confirm == "Yes":
+            if confirmed:
                 for game_name, game_path in config[platform_name].get("game_list", {}).items():
                     self.loader.remove_game_icon(game_path)
             
@@ -457,18 +465,14 @@ class DraggableNotebook(tb.Notebook):
         self.save_config()
 
     def show_menu(self, platform_name, x_root, y_root):
-        try:
-            game_tree = self.platform_trees[platform_name]
-            self.menu_popup = CustomPopupMenu(self)
-        except:
-            self.menu_popup= CustomPopupMenu(self)
+        self.menu_popup = CustomPopupMenu(self)
         
         if platform_name:  
-            self.menu_popup.add_button("🞧 Agregar plataforma", 25, "success-outline", lambda: self.new_platform(False))
-            self.menu_popup.add_button("🗑 Eliminar plataforma", 25, "danger-outline", self.remove_tab)
+            self.menu_popup.add_button("🞧 Agregar plataforma", 25, "success-outline", self.ask_platform_name)
+            self.menu_popup.add_button("🗑 Eliminar plataforma", 25, "danger-outline", self.confirm_remove)
             self.menu_popup.add_button("⚙ Propiedades", 25, "info-outline", lambda: self.open_properties(self.tab(self._active, "text")))
         else:
-            self.menu_popup.add_button("🞧 Agregar plataforma", 25, "success-outline", lambda: self.new_platform(False))
+            self.menu_popup.add_button("🞧 Agregar plataforma", 25, "success-outline", self.ask_platform_name)
         
         self.menu_popup.show(x_root, y_root)
   
@@ -516,7 +520,10 @@ class PropertiesWindow(tk.Frame):
         # Notebook
         self.notebook = tb.Notebook(self, bootstyle="primary")
         self.notebook.pack(fill="both", expand=True, padx=10, pady=(0, 10))
-
+        
+        # Close on escape
+        self.bind("<Escape>", self.destroy)
+        
         # Pestaña de directorios
         self.frame_path = tb.Frame(self.notebook)
         self.notebook.add(self.frame_path, text="📁 Directorios")
@@ -535,30 +542,42 @@ class PropertiesWindow(tk.Frame):
         self.path_listbox.bind("<Double-Button-1>", lambda event: self.double_click_on_path_event(event))
         self.path_listbox.bind("<Button-1>", lambda event: self.on_path_click(event))
         self.path_listbox.bind("<Button-3>", lambda event: self.on_path_right_click(event))
+        
+        # Label de advertencia debajo de la fila
+        self.warning_label_path = tb.Label(self.frame_path, text="", font=("Segoe UI", 9), bootstyle="danger", justify="center")
+        self.warning_label_path.grid(row=1, column=0, columnspan=2, pady=(5, 0), sticky="ew")
 
         # Botones
         btn_add_dir = tb.Button(self.frame_path, text="➕ Agregar Directorio", bootstyle="success-outline", command=self.btn_new_path)
-        btn_add_dir.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
+        btn_add_dir.grid(row=2, column=0, padx=5, pady=5, sticky="ew")
 
-        btn_remove_dir = tb.Button(self.frame_path, text="🗑 Eliminar Directorio", bootstyle="danger-outline", command=self.remove_folder)
-        btn_remove_dir.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
+        btn_remove_dir = tb.Button(self.frame_path, text="🗑 Eliminar Directorio", bootstyle="danger-outline", command=self.confirm_remove)
+        btn_remove_dir.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
         
-                # === Pestaña para renombrar plataforma ===
+        # === Pestaña para renombrar plataforma ===
         self.platform_tab = tb.Frame(self.notebook)
         self.notebook.add(self.platform_tab, text="📝 Nombre")
-
+        
         self.rename_frame = tb.Frame(self.platform_tab)
         self.rename_frame.pack(pady=30, padx=20)
 
-        rename_label = tb.Label(self.rename_frame, text="Renombrar pestaña:", font=("Segoe UI", 10, "bold"))
+        # Fila con el label, input y botón
+        input_row = tb.Frame(self.rename_frame)
+        input_row.pack(fill="x")
+
+        rename_label = tb.Label(input_row, text="Renombrar pestaña:", font=("Segoe UI", 10, "bold"))
         rename_label.pack(side="left", padx=(0, 10))
 
         self.tab_name_var = tk.StringVar(value=self.platform_name)
-        entry_tab_name = tb.Entry(self.rename_frame, textvariable=self.tab_name_var, width=30)
-        entry_tab_name.pack(side="left")
+        self.entry_tab_name = tb.Entry(input_row, textvariable=self.tab_name_var, width=30)
+        self.entry_tab_name.pack(side="left")
 
-        btn_save_name = tb.Button(self.rename_frame, text="💾 Guardar", bootstyle="info-outline", command=self.update_tab_name)
+        btn_save_name = tb.Button(input_row, text="💾 Guardar", bootstyle="info-outline", command=self.update_tab_name)
         btn_save_name.pack(side="left", padx=10)
+
+        # Label de advertencia debajo de la fila
+        self.warning_label = tb.Label(self.rename_frame, text="", font=("Segoe UI", 9), bootstyle="danger", justify="center")
+        self.warning_label.pack(pady=(5, 0), anchor="center", fill="x")
         
         self.update_game_list()
         self.update_directory_list()
@@ -577,7 +596,7 @@ class PropertiesWindow(tk.Frame):
                 return
             else: 
                 for widget in self.winfo_children():
-                    if isinstance(widget, CustomPopupMenu):
+                    if isinstance(widget, CustomPopupMenu) or isinstance(widget, ConfirmDialog):
                         widget.destroy()
         # Clic fuera de cualquier ítem → prevenimos selección
         path_listbox.selection_clear(0, tk.END)
@@ -598,6 +617,7 @@ class PropertiesWindow(tk.Frame):
         path_listbox = self.path_listbox
         index = path_listbox.nearest(event.y)  # Devuelve el índice más cercano al clic
         bbox = path_listbox.bbox(index)        # Da las coordenadas del ítem
+        self.menu = CustomPopupMenu(self, on_close_callback= self.menu_closed)
         
         if bbox:
             x, y, width, height = bbox
@@ -606,23 +626,23 @@ class PropertiesWindow(tk.Frame):
                 path_listbox.selection_clear(0, tk.END)  # Limpiar cualquier selección anterior
                 path_listbox.selection_set(index)        # Seleccionar el ítem clickeado
                 
-                menu = CustomPopupMenu(self, on_close_callback= self.menu_closed)  # Opciones del menú contextual
-                menu.add_button("📂 Ir a carpeta local", 20, "secondary", command= self.goto_folder)
-                menu.add_button("🗑️ Eliminar directorio",20, "secondary", command= self.remove_folder)
+                self.menu.add_button("📂 Ir a carpeta local", 20, "secondary", command= self.goto_folder)
+                self.menu.add_button("🗑️ Eliminar directorio",20, "secondary", command= self.confirm_remove)
     
                 # Obtener las coordenadas del puntero
                 x, y = event.x_root, event.y_root
     
                 # Mostrar el menú en la posición del puntero
-                menu.show(x, y)
+                self.menu.show(x, y)
             else:
                 self.on_path_right_click_out(event)
+        else:
+            self.on_path_right_click_out(event)
   
     def on_path_right_click_out(self, event):
-        menu = CustomPopupMenu(self, on_close_callback= self.menu_closed)
-        menu.add_button("➕ Agregar Directorio", 25, "secondary", command= self.btn_new_path)
+        self.menu.add_button("➕ Agregar Directorio", 25, "secondary", command= self.btn_new_path)
         x, y = event.x_root, event.y_root
-        menu.show(x, y)
+        self.menu.show(x, y)
 
     def save_config(self):
         with open(CONFIG_FILE, "w") as f:
@@ -685,12 +705,23 @@ class PropertiesWindow(tk.Frame):
         else:
             messagebox.showwarning("Atención", "Selecciona un Directorio")
 
-    def remove_folder(self): # elimina el directorio DE LA LISTA
+    def confirm_remove(self):
         path_listbox = self.path_listbox
         selected = path_listbox.curselection()
         if selected:
+            if hasattr(self, "menu") and self.menu:
+                self.menu.destroy()
+            ConfirmDialog(self, title="Eliminar directorio", message= "Atencion, estas por elminar un directorio", callback= self.remove_folder).place(relx=0.5, rely=0.5, anchor="center")
+        else: 
+            self.warning_label_path.config(text="                                                              Nada que eliminar")
+            self.warning_label_path.after(3000, lambda: self.warning_label_path.config(text=""))   
+
+    def remove_folder(self, confirmed): # elimina el directorio DE LA LISTA
+        if confirmed:
+            path_listbox = self.path_listbox
+            selected = path_listbox.curselection()
             path = path_listbox.get(selected[0])
-        
+    
             for games, paths in config[self.platform_name]["game_list"].copy().items():
                 if path in paths:
                     del config[self.platform_name]["game_list"][games]
@@ -703,11 +734,6 @@ class PropertiesWindow(tk.Frame):
             path_listbox.delete(selected[0])
             self.update_game_list()
             self.save_config()
-        else: 
-            messagebox.showwarning("Atención", "Selecciona un directorio para eliminar de la lista")
-        
-        # Close on escape
-        self.bind("<Escape>", lambda e: self.destroy())
 
     def update_directory_list(self): # recible el path_list y lo "actualiza"
         path_listbox = self.path_listbox
@@ -739,12 +765,14 @@ class PropertiesWindow(tk.Frame):
                 
                     pre_name = self.platform_name
                     self.platform_name = new_name
+                    self.warning_label.config(text="")  # Oculta la advertencia si está todo bien
                 
                     self.save_config()
                     self.on_update_tab(new_name, pre_name)
                     return
             else: 
-                Messagebox.show_warning(title="Nombre inválido", message="No podés dejar el nombre vacío.", alert=True)
+                self.warning_label.config(text="                                              No podés dejar el nombre vacío.")
+                self.warning_label.after(3000, lambda: self.warning_label.config(text=""))
                 self.lift()
                 return
 
@@ -887,37 +915,34 @@ class GamePlatformFrame(ttk.Frame):
             game_list[exe_name] = exe
             self.save_config()
             self.loader.update_game_list(platform_name, self.game_tree)
+    
+    def confirm_remove(self):
+        if hasattr(self, "menu_popup") and self.menu_popup:
+            self.menu_popup.destroy()
+        ConfirmDialog(self, title="Eliminar juego", message= "Atencion, estas por elminar un juego", callback=self.remove_exe).place(relx=0.5, rely=0.5, anchor="center")
                
-    def remove_exe(self): # elimina el ejecutable DE LA LISTA
+    def remove_exe(self, confirmed): # elimina el ejecutable DE LA LISTA
         platform_name = self.platform_name
         game_tree = self.game_tree
         selected_items = game_tree.selection()
-        if selected_items:
-            confirm = Messagebox.yesno(title="Eliminar juego", message=f"Atencion, estas por elminar un juego", alert=True, parent=self)
-            if confirm == "Yes":
-                for item_id in selected_items:
-                    game_name = game_tree.item(item_id, "values")[0]  # El texto del ítem (nombre del juego)
+        if confirmed:
+            for item_id in selected_items:
+                game_name = game_tree.item(item_id, "values")[0]  # El texto del ítem (nombre del juego)
 
-                    game_path = config[platform_name]["game_list"].get(game_name)
-                    self.loader.remove_game_icon(game_path)
-                
-                    config[platform_name]["game_list"].pop(game_name, None)
-                    config[platform_name].get("game_times", {}).pop(game_name, None)
-                    config[platform_name].get("game_total_times").pop(game_name, None)
-                    try:
-                        config[platform_name]["favorites"].remove(game_name)
-                    except:
-                        pass
+                game_path = config[platform_name]["game_list"].get(game_name)
+                self.loader.remove_game_icon(game_path)
+            
+                config[platform_name]["game_list"].pop(game_name, None)
+                config[platform_name].get("game_times", {}).pop(game_name, None)
+                config[platform_name].get("game_total_times").pop(game_name, None)
+                if game_name in config[platform_name].setdefault("favorites", []):
+                    config[platform_name]["favorites"].remove(game_name)
                     
-                    self.clean_info()
-                    game_tree.delete(item_id)
+                self.clean_info()
+                game_tree.delete(item_id)
                     
-                self.save_config()
-            else: 
-                pass
-        else:
-            messagebox.showwarning("Atención", "Selecciona un juego para eliminar de la lista")
-
+            self.save_config()
+        
     def update_game_list(self, platform_name, game_tree):
         self.loader.grouped = not self.loader.grouped
         self.loader.update_game_list(platform_name, game_tree) 
@@ -984,6 +1009,7 @@ class GamePlatformFrame(ttk.Frame):
     def show_menu(self, game_name, x_root , y_root, btn_props):
         platform_name = self.platform_name
         menu = CustomPopupMenu(self)
+        self.menu_popup = menu
         
         if game_name:
             if not btn_props:
@@ -993,7 +1019,7 @@ class GamePlatformFrame(ttk.Frame):
             menu.add_button("⤓ Crear acceso directo", 25, "info-outline", lambda: self.create_direct_access(
                             game_name, os.path.abspath(sys.argv[0]), config[platform_name]["game_list"][game_name], destino_desktop=True))
             menu.add_button("📁 Archivos locales", 25, "info-outline", lambda: self.goto_folder(game_name))
-            menu.add_button("🗑 Eliminar juego", 25, "danger-outline", self.remove_exe)
+            menu.add_button("🗑 Eliminar juego", 25, "danger-outline", self.confirm_remove)
         
         else:
             menu.add_button("＋ Agregar juego", 25, "success-outline", self.add_exe)
@@ -1212,6 +1238,111 @@ class CustomPopupMenu(tb.Frame):
         self.parent.unbind_all("<Button-3>")
         if self.on_close_callback:
             self.on_close_callback(event)
+
+class InputDialog(tb.Frame):
+    def __init__(self, parent, prompt="Ingrese valor:", callback=None, cancel_callback=None):
+        super().__init__(parent, padding=10)
+        self.callback = callback
+        self.cancel_callback = cancel_callback
+        self.input_var = StringVar()
+
+        tb.Label(self, text=prompt, font=("Segoe UI", 11), bootstyle="light").pack(padx=10, pady=(5, 5), anchor="w")
+
+        entry = tb.Entry(self, textvariable=self.input_var, font=("Segoe UI", 10))
+        entry.pack(padx=10, pady=5, fill="x")
+        entry.focus()
+
+        btn_frame = tb.Frame(self)
+        btn_frame.pack(pady=(10, 0))
+
+        tb.Button(btn_frame, text="Aceptar", bootstyle="success-outline", command=self.on_ok).pack(side="left", padx=5)
+        tb.Button(btn_frame, text="Cancelar", bootstyle="danger-outline", command=self.on_cancel).pack(side="left", padx=5)
+
+        self.bind_all("<Return>", lambda e: self.on_ok())
+        self.bind_all("<Escape>", lambda e: self.on_cancel())
+        self.after(100, self.bind_click_outside)
+
+    def on_ok(self):
+        value = self.input_var.get().strip().title()
+        if value and self.callback:
+            self.callback(value)
+        self.destroy()
+
+    def on_cancel(self):
+        if self.cancel_callback:
+            self.cancel_callback()
+        self.destroy()
+    
+    def bind_click_outside(self):
+        self.bind_all("<Button-1>", self.check_click_outside)
+        self.bind_all("<Button-3>", self.check_click_outside)
+        
+    def check_click_outside(self, event):
+        # Verifica si el clic fue fuera del frame
+        widget = self.winfo_containing(event.x_root, event.y_root)
+        if not widget or not self._is_child_of(widget, self):
+            if self.cancel_callback:
+                self.cancel_callback()
+            self.destroy()
+
+    def _is_child_of(self, widget, parent):
+        # Recorre hacia arriba para ver si el widget pertenece al frame
+        while widget:
+            if widget == parent:
+                return True
+            widget = widget.master
+        return False
+    
+    def destroy_wdw(self):
+        self.destroy()
+
+class ConfirmDialog(tb.Frame):
+    def __init__(self, parent, title="Confirmar", message="¿Estás seguro?", callback=None):
+        super().__init__(parent, padding=20)
+        self.callback = callback
+        
+        # Título
+        tb.Label(self, text=title, font=("Segoe UI", 12, "bold"), bootstyle="warning").pack(pady=(0, 10))
+
+        # Mensaje
+        tb.Label(self, text=message, font=("Segoe UI", 10), wraplength=300).pack(pady=(0, 15))
+
+        # Botones
+        btn_frame = tb.Frame(self)
+        btn_frame.pack()
+
+        tb.Button(btn_frame, text="✅ Sí", bootstyle="success", width=10,
+                  command=lambda:self._respond(True)).pack(side="left", padx=5)
+
+        tb.Button(btn_frame, text="❌ No", bootstyle="danger-outline", width=10,
+                  command=lambda:self._respond(False)).pack(side="left", padx=5)
+
+        self.bind("<Return>", lambda e: self._respond(True))
+        self.bind("<Escape>", lambda e: self._respond(False))
+        self.after(100, self.bind_click_outside)
+
+    def bind_click_outside(self):
+        self.bind_all("<Button-1>", self.check_click_outside)
+        self.bind_all("<Button-3>", self.check_click_outside)
+
+    def check_click_outside(self, event):
+        # Verifica si el clic fue fuera del frame
+        widget = self.winfo_containing(event.x_root, event.y_root)
+        if not widget or not self._is_child_of(widget, self):
+            self.destroy()
+
+    def _is_child_of(self, widget, parent):
+        # Recorre hacia arriba para ver si el widget pertenece al frame
+        while widget:
+            if widget == parent:
+                return True
+            widget = widget.master
+        return False
+    
+    def _respond(self, confirmed):
+        self.destroy()
+        if self.callback:
+            self.callback(confirmed)
                    
 class GameLauncherController:
     _instance = None
@@ -1332,7 +1463,9 @@ def main():
         launcherui = LauncherUI()
         launcher_controler = GameLauncherController()
         launcherui.start()
-        
 
 if __name__ == "__main__":
     main()
+    
+# revisar exepcion al agregar plataforma pero no agregar directorio
+# intentar clase para cerrar menues/propiedades/dialogs (necesita un callback)

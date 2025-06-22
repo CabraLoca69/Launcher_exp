@@ -1,5 +1,6 @@
 import requests
-from launcher69 import Loader, config
+from datafiles import config
+from helpers import Loader
 
 class SteamIntegration:
     def __init__(self, config):

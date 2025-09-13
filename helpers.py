@@ -1,8 +1,5 @@
 import os
 import json
-import win32gui
-import win32ui
-import win32con
 import logging
 import subprocess
 import threading
@@ -11,11 +8,12 @@ import time
 from datetime import datetime
 from PIL import Image, ImageTk
 from tkinter import filedialog
-from datafiles import config, config_lock, CONFIG_FILE, FLAG_FILE, ICONS_CACHE_DIR, ICONS
+from icon_utils import get_app_icon
+import datafiles
 
 class Loader:
     def __init__(self):
-        self.img = Image.open(os.path.join(ICONS, f"no_icon.ico")).resize((16, 16), Image.LANCZOS)
+        self.img = Image.open(os.path.join(datafiles.ICONS, f"no_icon.ico")).resize((16, 16), Image.LANCZOS)
         self.default_icon= ImageTk.PhotoImage(self.img)
         self.grouped = True
         pass
@@ -23,12 +21,12 @@ class Loader:
     def add_folder(self, platform_name): # agrega un directorio a la lista 
         folder = filedialog.askdirectory()
         if folder:            
-            if platform_name not in config:
-                config[f"{platform_name}"] = {}
-                config[platform_name] = {"platform_folders" : [f"{folder}" ] , "game_list" : {} , "game_times" : {} , "game_total_times" : {}}
+            if platform_name not in datafiles.config:
+                datafiles.config[f"{platform_name}"] = {}
+                datafiles.config[platform_name] = {"platform_folders" : [f"{folder}" ] , "game_list" : {} , "game_times" : {} , "game_total_times" : {}}
             else:
-                if folder not in config[platform_name]["platform_folders"]:
-                    config[platform_name]["platform_folders"].append(f"{folder}")
+                if folder not in datafiles.config[platform_name]["platform_folders"]:
+                    datafiles.config[platform_name]["platform_folders"].append(f"{folder}")
       
             self.scan_for_games(platform_name)
         
@@ -37,13 +35,13 @@ class Loader:
     def scan_for_games(self, platform_name): # busca todos los ejecutables en el directorio que le llega y los agrega a la lista
         executable_extensions = [".exe", ".bat", ".sh"]
         ignore_keywords = ["vc_redist", "unins", "setup", "install", "dxsetup", "dotnet", "readme", "helper", "support", "launcher", "Launcher", "Win64"]
-        for path in config[platform_name]["platform_folders"]:
+        for path in datafiles.config[platform_name]["platform_folders"]:
             for root, _, files in os.walk(path):
                 for file in files:
                     if any(file.lower().endswith(ext) for ext in executable_extensions):
                         if any(keyword in file.lower() for keyword in ignore_keywords):
                             continue    
-                        config[platform_name]["game_list"][os.path.splitext(file)[0]] = os.path.join(root, file)
+                        datafiles.config[platform_name]["game_list"][os.path.splitext(file)[0]] = os.path.join(root, file)
                         
         self.save_config()
 
@@ -63,9 +61,9 @@ class Loader:
         game_tree.column("name", anchor="w", width=200)
         game_tree.heading("name", text="Nombre del juego")
 
-        game_list = config[platform_name]["game_list"]
-        game_times = config[platform_name].get("game_times", {})
-        favorites = config[platform_name].get("favorites", [])
+        game_list = datafiles.config[platform_name]["game_list"]
+        game_times = datafiles.config[platform_name].get("game_times", {})
+        favorites = datafiles.config[platform_name].get("favorites", [])
 
         if not hasattr(game_tree, "icon_images"):
             game_tree.icon_images = {}
@@ -117,20 +115,20 @@ class Loader:
         icon_path = os.path.join("icons_cache", icon_name)
         if os.path.exists(icon_path):
             os.remove(icon_path)
-    
+            
     @staticmethod
     def load_config():
-        global config
-        with config_lock:
-            with open(CONFIG_FILE, "r") as f:
-                config = json.load(f)
+        with datafiles.config_lock:
+            with open(datafiles.CONFIG_FILE, "r") as f:
+                loaded = json.load(f)
+            datafiles.config.clear()
+            datafiles.config.update(loaded)
 
     @staticmethod
     def save_config():
-        global config
-        with config_lock:
-            with open(CONFIG_FILE, "w") as f:
-                json.dump(config, f, indent=4)
+        with datafiles.config_lock:
+            with open(datafiles.CONFIG_FILE, "w") as f:
+                json.dump(datafiles.config, f, indent=4)
 
 class GameLauncherController:
     _instance = None
@@ -142,12 +140,13 @@ class GameLauncherController:
 
     def __init__(self):
         self.launched = False  # Indicador de si hay un juego lanzado
+        self.already_saved = {}
         self.lock = threading.Lock()  # Lock para sincronizar el acceso
 
     def launch_game(self, platform_name, game_name, game_path, on_game_end=None):
         def execute():
             with self.lock:
-                allow_multiple = config["global"].get("allow_multiple_games", False)
+                allow_multiple = datafiles.config["global"].get("allow_multiple_games", False)
 
                 if not allow_multiple:
                     if self.launched:
@@ -157,26 +156,26 @@ class GameLauncherController:
                 # Marcar que el juego está lanzado
                 self.launched = True
 
+            clean_orphaned_sessions()
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             start_time = time.time()
             start_dt = datetime.now()
-            with open(FLAG_FILE, "w") as f:
-                f.write("1")
             
-
             # Lanza el juego en un proceso nuevo
             process = subprocess.Popen(game_path)
                     
             pid = process.pid
             with self.lock:
-                config["global"].setdefault("actual_sessions", {})[game_name] = {"pid": pid, "start_time": start_dt.isoformat()}
-                config["global"].setdefault("actual_running", {})[game_name] = {"pid": pid}
+                datafiles.config["global"].setdefault("actual_sessions", {})[game_name] = {"pid": pid, "start_time": start_dt.isoformat()}
+                datafiles.config["global"].setdefault("actual_running", {})[game_name] = {"pid": pid}
                 self.save_config()
+            
+            with open(datafiles.FLAG_FILE, "w") as f:
+                f.write("1")
 
             # Hilo de guardado periódico cada 5 minutos
             running = True
             
-
             def periodic_saver():
                 while running:
                     time.sleep(300)  # 5 minutos
@@ -187,7 +186,7 @@ class GameLauncherController:
                     dur_min = (time.time() - start_time) / 60
                     
                     with self.lock:
-                        game_times = config[platform_name].setdefault("game_times", {})
+                        game_times = datafiles.config[platform_name].setdefault("game_times", {})
                         game_times.setdefault(game_name, [])
 
                         # Si hay al menos una sesión previa y la última tiene el mismo "Start"
@@ -200,9 +199,10 @@ class GameLauncherController:
                         game_times[game_name] = game_times[game_name][-5:]  # mantener los últimos 5
                     
                         # También actualizamos el total aproximado (acumulado estimado)
-                        game_total_times = config[platform_name].setdefault("game_total_times", {})
+                        game_total_times = datafiles.config[platform_name].setdefault("game_total_times", {})
                         game_total_times.setdefault(game_name, 0.0)
                         game_total_times[game_name] += 5
+                        self.already_saved[game_name] = True
 
                         self.save_config()
 
@@ -214,15 +214,25 @@ class GameLauncherController:
             finally:
                 with self.lock:
                     running = False  # Detiene el guardado periódico
-                    config["global"]["actual_running"].pop(game_name, None) #lo elimina de los procesos corriendo ("se cerro correctamente")
+                    datafiles.config["global"]["actual_running"].pop(game_name, None) #lo elimina de los procesos corriendo ("se cerro correctamente")
         
                     # Intentar eliminar la sesión activa
-                    config["global"]["actual_sessions"].pop(game_name, None)
+                    datafiles.config["global"]["actual_sessions"].pop(game_name, None)
+
+                    game_total_times = datafiles.config[platform_name].setdefault("game_total_times", {})
+                    game_total_times.setdefault(game_name, 0.0)
+
+                    game_times = datafiles.config[platform_name].setdefault("game_times", {})
+                    game_times.setdefault(game_name, [])
 
                     # Guardado final más preciso
                     dur_min = (time.time() - start_time) / 60
-                    game_times = config[platform_name].setdefault("game_times", {})
-                    game_times.setdefault(game_name, [])
+                    if self.already_saved.get(game_name, False): 
+                        dif = dur_min - game_times[game_name][-1]["Tiempo"]
+                        if dif > 0:
+                            game_total_times[game_name] += round(dif, 2)
+                    else:
+                        game_total_times[game_name] += round(dur_min, 2)
                 
                     # Si hay al menos una sesión previa y la última tiene el mismo "Start"
                     if game_times[game_name] and game_times[game_name][-1]["Start"] == now:
@@ -232,11 +242,8 @@ class GameLauncherController:
                         game_times.setdefault(game_name, []).append({"Start": now, "Tiempo": round(dur_min, 2)})
                 
                     game_times[game_name] = game_times[game_name][-5:]
+                    self.already_saved.pop(game_name, None)
 
-                    game_total_times = config[platform_name].setdefault("game_total_times", {})
-                    game_total_times.setdefault(game_name, 0.0)
-                    game_total_times[game_name] += round(dur_min, 2)
-                
                     self.save_config()
                     #reseteamos el estado del launched al cerrar el juego
                     self.launched = False
@@ -252,7 +259,7 @@ class GameLauncherController:
         Loader.save_config()
 
 def clean_orphaned_sessions():
-    actual_running = config["global"].get("actual_running", {})
+    actual_running = datafiles.config["global"].get("actual_running", {})
     to_remove = []
 
     # Si hay algo registrado como corriendo, verificar si realmente lo está
@@ -262,18 +269,17 @@ def clean_orphaned_sessions():
             to_remove.append(game_name)
 
     for game_name in to_remove:
-        config["global"]["actual_sessions"].pop(game_name, None)
+        datafiles.config["global"]["actual_sessions"].pop(game_name, None)
         actual_running.pop(game_name, None)
 
     # Si actual_running quedó vacío, borrar actual_sessions completamente
     if not actual_running:
-        config["global"].pop("actual_sessions", None)
+        datafiles.config["global"].pop("actual_sessions", None)
 
     if to_remove or not actual_running:
-        config["global"].setdefault("actual_sessions", {})
-        config["global"].setdefault("actual_running", {})
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(config, f, indent=4)
+        datafiles.config["global"].setdefault("actual_sessions", {})
+        datafiles.config["global"].setdefault("actual_running", {})
+        Loader.save_config()
 
 def is_process_running(pid):
     try:
@@ -281,28 +287,5 @@ def is_process_running(pid):
     except Exception:
         return False
 
-def extract_icon(path, size=(16, 16)): 
-    try:
-        ico_path = os.path.join(ICONS_CACHE_DIR, f"{os.path.basename(path)}.ico")
-        
-        if os.path.exists(ico_path):
-            return ImageTk.PhotoImage(Image.open(ico_path).resize((16, 16), Image.LANCZOS))
-        
-        large, small = win32gui.ExtractIconEx(path, 0)
-        if small:
-            hicon = small[0]
-            hdc = win32ui.CreateDCFromHandle(win32gui.GetDC(0))
-            hbmp = win32ui.CreateBitmap()
-            hbmp.CreateCompatibleBitmap(hdc, 32, 32)
-            hdc = hdc.CreateCompatibleDC()
-            hdc.SelectObject(hbmp)
-            win32gui.DrawIconEx(hdc.GetHandleOutput(), 0, 0, hicon, 32, 32, 0, None, win32con.DI_NORMAL)
-            hbmp.SaveBitmapFile(hdc, ico_path)
-            win32gui.DestroyIcon(hicon)
-
-            return ImageTk.PhotoImage(Image.open(ico_path).resize((16, 16), Image.LANCZOS))
-        
-    except Exception as e:
-        print("Error extrayendo ícono:", e)
-    
-    return None
+def extract_icon(path): 
+    return get_app_icon(path)

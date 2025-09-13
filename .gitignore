@@ -5,3 +5,5 @@ __pycache__
 *.spec
 *.log
 *.json
+steamintegration.py
+pruebas.py

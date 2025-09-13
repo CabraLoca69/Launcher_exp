@@ -1,6 +1,6 @@
 
 import sys
-from datafiles import config
+import datafiles
 from interfaces import LauncherUI
 from helpers import GameLauncherController, clean_orphaned_sessions
 
@@ -8,7 +8,7 @@ def main():
     if "--launch" in sys.argv and "--platform" in sys.argv:
         game_name = sys.argv[sys.argv.index("--launch") + 1]
         platform_name = sys.argv[sys.argv.index("--platform") + 1]
-        game_path = config.get(platform_name, {}).get("game_list", {}).get(game_name)
+        game_path = datafiles.config.get(platform_name, {}).get("game_list", {}).get(game_name)
         launcher_controler = GameLauncherController()
         if game_path:
             launcher_controler.launch_game(platform_name, game_name, game_path)
@@ -39,3 +39,4 @@ if __name__ == "__main__":
 # separar las clases en los diferentes archivos para mas organizacion
 # intentar coordinar con una nube? que pasa si juego desde otra pc??
 # tratar de integrar ia (para boludear)
+# revisar cerrar el launcher con las notas abiertas no se guarda

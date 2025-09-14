@@ -8,13 +8,12 @@ import time
 from datetime import datetime
 from PIL import Image, ImageTk
 from tkinter import filedialog
-from icon_utils import get_app_icon
+from icon_utils import get_app_icon, load_icon
 import datafiles
 
 class Loader:
     def __init__(self):
-        self.img = Image.open(os.path.join(datafiles.ICONS, f"no_icon.ico")).resize((16, 16), Image.LANCZOS)
-        self.default_icon= ImageTk.PhotoImage(self.img)
+        self.default_icon= load_icon(os.path.join(datafiles.ICONS, "no_icon.ico"), size=(16,16))
         self.grouped = True
         pass
     

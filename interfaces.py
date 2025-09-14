@@ -13,6 +13,8 @@ from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageTk
 from helpers import Loader, GameLauncherController, extract_icon
+from icon_utils import set_window_icon
+
 if sys.platform.startswith("win"):
     import win32com.client
 
@@ -20,9 +22,10 @@ class LauncherUI:
     def __init__(self):
         self.root = tb.Window(themename="darkly")
         self.root.title("Game Launcher")
-        self.root.iconbitmap(os.path.join(datafiles.ICONS, f"icon.ico"))
         self.root.geometry("900x600")
         self.root.minsize(600, 400)
+        
+        set_window_icon(self.root, "icon.ico")
 
         self.root.grid_rowconfigure(0, weight=1)  # Notebook se expande
         self.root.grid_columnconfigure(0, weight=1)

@@ -15,6 +15,11 @@ class AutoCloseFrame(tb.Frame):
 
     def check_click_outside(self, event):
         widget = self.winfo_containing(event.x_root, event.y_root)
+
+        # Ignorar widgets internos de Tk (como __tk_choosedir)
+        if widget and str(widget).startswith("__tk_"):
+            return
+
         if not widget or not self._is_child_of(widget, self):
             if self.should_close(widget):
                 self.on_close(event)

@@ -17,31 +17,50 @@ class Loader:
         self.grouped = True
         pass
     
-    def add_folder(self, platform_name): # agrega un directorio a la lista 
+    def add_folder(self, platform_name):  # agrega un directorio a la lista 
         folder = filedialog.askdirectory()
-        if folder:            
-            if platform_name not in datafiles.config:
-                datafiles.config[f"{platform_name}"] = {}
-                datafiles.config[platform_name] = {"platform_folders" : [f"{folder}" ] , "game_list" : {} , "game_times" : {} , "game_total_times" : {}}
-            else:
-                if folder not in datafiles.config[platform_name]["platform_folders"]:
-                    datafiles.config[platform_name]["platform_folders"].append(f"{folder}")
-      
-            self.scan_for_games(platform_name)
-        
+        if not folder:
+            return None  # usuario canceló
+
+        # Crear la sección de la plataforma si no existe
+        if platform_name not in datafiles.config:
+            datafiles.config[platform_name] = {
+                "platform_folders": [folder],
+                "game_list": {},
+                "game_times": {},
+                "game_total_times": {}
+            }
+        else:
+            # Asegurarse de que 'platform_folders' exista
+            platform_data = datafiles.config[platform_name]
+            if "platform_folders" not in platform_data:
+                platform_data["platform_folders"] = []
+            if folder not in platform_data["platform_folders"]:
+                platform_data["platform_folders"].append(folder)
+
+        self.scan_for_games(platform_name)
         return folder
 
-    def scan_for_games(self, platform_name): # busca todos los ejecutables en el directorio que le llega y los agrega a la lista
-        executable_extensions = [".exe", ".bat", ".sh"]
+    def is_executable(path):
+        """Devuelve True si el archivo es ejecutable en este SO"""
+        if sys.platform.startswith("win"):
+            return os.path.splitext(path)[1].lower() in [".exe", ".bat", ".cmd", ".sh"]
+        else:  # Linux / macOS
+            return os.path.isfile(path) and os.access(path, os.X_OK)
+
+    def scan_for_games(self, platform_name):
         ignore_keywords = ["vc_redist", "unins", "setup", "install", "dxsetup", "dotnet", "readme", "helper", "support", "launcher", "Launcher", "Win64"]
+
         for path in datafiles.config[platform_name]["platform_folders"]:
             for root, _, files in os.walk(path):
                 for file in files:
-                    if any(file.lower().endswith(ext) for ext in executable_extensions):
-                        if any(keyword in file.lower() for keyword in ignore_keywords):
-                            continue    
-                        datafiles.config[platform_name]["game_list"][os.path.splitext(file)[0]] = os.path.join(root, file)
-                        
+                    full_path = os.path.join(root, file)
+                    if not is_executable(full_path):
+                        continue
+                    if any(keyword in file.lower() for keyword in ignore_keywords):
+                        continue
+                    datafiles.config[platform_name]["game_list"][os.path.splitext(file)[0]] = full_path
+
         self.save_config()
 
     def update_game_list(self, platform_name, game_tree):

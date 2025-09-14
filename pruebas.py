@@ -17,7 +17,6 @@ from ttkbootstrap.dialogs import Messagebox
 from datetime import datetime
 from PIL import Image, ImageTk
 
-
 BASE_DIR = os.path.dirname(os.path.abspath(sys.argv[0]))
 CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
 launched = False

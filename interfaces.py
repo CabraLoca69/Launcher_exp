@@ -203,8 +203,7 @@ class DraggableNotebook(tb.Notebook):
         self.FAVORITE_LIMIT = 5
         self.platform_trees = {}
         self.loader = Loader()
-        self.img = Image.open(os.path.join(datafiles.ICONS, f"no_icon.ico")).resize((16, 16), Image.LANCZOS)
-        self.default_icon= ImageTk.PhotoImage(self.img)     
+        self.default_icon= load_icon(os.path.join(datafiles.ICONS, "no_icon.ico"), size=(16,16)) 
                         
         # este frame se usa cuando no hay tabs (plataformas)
         self.empty_frame = tb.Frame(self)

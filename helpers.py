@@ -18,9 +18,7 @@ class Loader:
         pass
     
     def add_folder(self, platform_name):  # agrega un directorio a la lista 
-        folder = filedialog.askdirectory()
-        if not folder:
-            return None  # usuario canceló
+        folder = safe_askdirectory()
 
         # Crear la sección de la plataforma si no existe
         if platform_name not in datafiles.config:
@@ -275,6 +273,21 @@ class GameLauncherController:
 
     def save_config(self):
         Loader.save_config()
+
+def safe_askdirectory():
+    try:
+        folder = filedialog.askdirectory()
+        return folder
+    except KeyError as e:
+        if "__tk_choosedir" in str(e):
+            print("⚠️ El diálogo nativo de directorios no está disponible, usando alternativa.")
+            folder = filedialog.askopenfilename(mustexist=True, title="Seleccione una carpeta")
+            if folder:
+                import os
+                return os.path.dirname(folder)
+            return None
+        else:
+            raise
 
 def clean_orphaned_sessions():
     actual_running = datafiles.config["global"].get("actual_running", {})

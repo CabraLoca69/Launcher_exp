@@ -13,7 +13,7 @@ from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageTk
 from helpers import Loader, GameLauncherController, extract_icon
-from icon_utils import set_window_icon
+from icon_utils import set_window_icon, load_icon
 
 if sys.platform.startswith("win"):
     import win32com.client

@@ -5,6 +5,7 @@ import subprocess
 import threading
 import psutil
 import time
+import sys
 from datetime import datetime
 from PIL import Image, ImageTk
 from tkinter import filedialog
@@ -39,7 +40,7 @@ class Loader:
         self.scan_for_games(platform_name)
         return folder
 
-    def is_executable(path):
+    def is_executable(self, path):
         """Devuelve True si el archivo es ejecutable en este SO"""
         if sys.platform.startswith("win"):
             return os.path.splitext(path)[1].lower() in [".exe", ".bat", ".cmd", ".sh"]
@@ -53,7 +54,7 @@ class Loader:
             for root, _, files in os.walk(path):
                 for file in files:
                     full_path = os.path.join(root, file)
-                    if not is_executable(full_path):
+                    if not self.is_executable(full_path):
                         continue
                     if any(keyword in file.lower() for keyword in ignore_keywords):
                         continue

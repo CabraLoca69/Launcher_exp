@@ -1,6 +1,7 @@
 import os
 import platform
 import datafiles
+import subprocess
 from pathlib import Path
 from PIL import Image, ImageTk
 
@@ -18,37 +19,32 @@ if platform.system() == "Linux":
     except ImportError:
         DesktopEntry = None
 
-def get_app_icon(path, size=(16, 16), fallback_icon=os.path.join(datafiles.ICONS, f"no_icon.ico")):
-    """
-    Devuelve SIEMPRE un ImageTk.PhotoImage (Tkinter).
-    En Windows extrae el ícono incrustado en .exe.
-    En Linux busca icono desde .desktop o usa un fallback.
-    """
-
+def get_app_icon(path, size=(16,16), fallback_icon=None):
     system = platform.system()
+    path = str(path)
 
     if system == "Windows":
-        image = _get_windows_icon(path, size, fallback_icon)
+        return ImageTk.PhotoImage(_get_windows_icon(path, size, fallback_icon))
     
     elif system == "Linux":
-        try:
-            image = _get_linux_icon(path, size, fallback_icon)
-        except Exception:
-            # Si falla, usamos el fallback
-            fallback_icon = Path(fallback_icon)
-            if fallback_icon.suffix.lower() == ".ico":
-                # Convertir a .png automáticamente
-                fallback_icon = ico_to_png(fallback_icon, size=size)
-            image = Image.open(fallback_icon).resize(size, Image.LANCZOS)
-
+        if is_wine_executable(path):
+            return ImageTk.PhotoImage(get_wine_icon(path, size, fallback_icon))
+        else:
+            try:
+                return ImageTk.PhotoImage(_get_linux_icon(path, size, fallback_icon))
+            except Exception:
+                # fallback
+                fallback_icon = os.path.join(datafiles.ICONS, "no_icon.ico")
+                if fallback_icon.suffix.lower() == ".ico":
+                    fallback_icon = ico_to_png(fallback_icon, size=size)
+                return ImageTk.PhotoImage(Image.open(fallback_icon).resize(size, Image.LANCZOS))
+    
     else:
-        # MacOS u otro
-        fallback_icon = Path(fallback_icon)
+        # MacOS u otros
+        fallback_icon = os.path.join(datafiles.ICONS, "no_icon.ico")
         if fallback_icon.suffix.lower() == ".ico":
             fallback_icon = ico_to_png(fallback_icon, size=size)
-        image = Image.open(fallback_icon).resize(size, Image.LANCZOS)
-
-    return ImageTk.PhotoImage(image)
+        return ImageTk.PhotoImage(Image.open(fallback_icon).resize(size, Image.LANCZOS))
 
 # ---------------- Windows ---------------- #
 def _get_windows_icon(exe_path, size, fallback_icon):
@@ -151,6 +147,71 @@ def set_window_icon(window, icon_name="icon.ico"):
         photo = ImageTk.PhotoImage(img)
         window.tk.call('wm', 'iconphoto', window._w, photo)
         window._icon_photo = photo  # mantener referencia
+
+
+def is_wine_executable(path: str) -> bool:
+    """
+    Devuelve True si el archivo es un ejecutable de Windows que probablemente
+    se ejecutará con Wine en Linux.
+    """
+    path = str(path)
+    return path.lower().endswith((".exe", ".bat", ".cmd")) or "wine" in path.lower()
+
+def get_wine_icon(path: str, size=(16,16), fallback_icon=None, wineprefix=None, icon_dir=datafiles.ICONS) -> Image.Image:
+    """
+    Extrae un icono de un ejecutable de Windows en Linux usando icotool.
+    Si falla, busca el .ico cacheado desde Windows en datafiles.ICONS_CACHE_DIR.
+    Finalmente, usa fallback_icon si nada de eso existe.
+    """
+    path = str(path)
+    fallback_icon = fallback_icon or os.path.join(icon_dir, "no_icon.ico")
+
+    icon_dir = Path(icon_dir)
+    icon_dir.mkdir(parents=True, exist_ok=True)
+
+    # Nombre final del PNG en la carpeta de icons
+    icon_path = icon_dir / (Path(path).stem + ".png")
+
+    if icon_path.exists():
+        return Image.open(icon_path).convert("RGBA").resize(size, Image.LANCZOS)
+
+    # 1️⃣ Intentamos extraer con icotool
+    try:
+        env = os.environ.copy()
+        if wineprefix:
+            env["WINEPREFIX"] = str(wineprefix)
+
+        subprocess.run(
+            ["icotool", "-x", "-o", str(icon_dir), path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+            check=True
+        )
+
+        # icotool genera uno o más PNGs, elegimos el primero
+        png_files = list(icon_dir.glob(Path(path).stem + "*.png"))
+        if png_files:
+            icon_path = png_files[0]
+            return Image.open(icon_path).convert("RGBA").resize(size, Image.LANCZOS)
+    except Exception as e:
+        print(f"[get_wine_icon] icotool falló para {path}: {e}")
+    
+    # 2️⃣ Buscamos el .ico cacheado de Windows
+    cached_icon = Path(datafiles.ICONS_CACHE_DIR) / (Path(path).stem + ".exe.ico")
+    if cached_icon.exists():
+        try:
+            print("try wdw icon")
+            png_path = ico_to_png(cached_icon, size=size, output_dir=icon_dir)
+            return Image.open(png_path).convert("RGBA").resize(size, Image.LANCZOS)
+        except Exception as e:
+            print(f"[get_wine_icon] fallo al convertir el .ico cacheado de Windows: {e}")
+            
+    # 3️⃣ Fallback final
+    fallback_icon = Path(icon_dir, "no_icon.ico")
+    if fallback_icon.suffix.lower() == ".ico":
+        fallback_icon = ico_to_png(fallback_icon, size=size, output_dir=icon_dir)
+    return Image.open(fallback_icon).convert("RGBA").resize(size, Image.LANCZOS)
  
 def load_icon(path, size=(16, 16)):
     """

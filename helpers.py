@@ -6,11 +6,13 @@ import threading
 import psutil
 import time
 import sys
+import datafiles
+import signal
 from datetime import datetime
 from PIL import Image, ImageTk
 from tkinter import filedialog
 from icon_utils import get_app_icon, load_icon
-import datafiles
+
 
 class Loader:
     def __init__(self):
@@ -156,122 +158,163 @@ class GameLauncherController:
         return cls._instance
 
     def __init__(self):
-        self.launched = False  # Indicador de si hay un juego lanzado
+        self.launched = False
         self.already_saved = {}
-        self.lock = threading.Lock()  # Lock para sincronizar el acceso
+        self.lock = threading.Lock()
 
+    # ---------------------------
+    # Helpers de ejecución
+    # ---------------------------
+    def _run_windows(self, game_path):
+        """Ejecuta un juego en Windows."""
+        return subprocess.Popen(game_path)
+
+    def _run_linux_native(self, game_path):
+        """Ejecuta un juego nativo en Linux."""
+        return subprocess.Popen([game_path])
+
+    def _run_linux_wine(self, game_path, wineprefix=None):
+        """Ejecuta un juego de Windows en Linux con Wine."""
+        env = os.environ.copy()
+        if wineprefix:
+            env["WINEPREFIX"] = wineprefix
+        else:
+            # Si no hay configurado, usamos el default de Wine (~/.wine)
+            env["WINEPREFIX"] = os.path.expanduser("~/.wine")
+
+        return subprocess.Popen(["wine", game_path], env=env)
+
+    def _needs_wine(self, game_path):
+        """Devuelve True si el juego requiere Wine (por extensión)."""
+        ext = os.path.splitext(game_path)[1].lower()
+        return ext in [".exe", ".bat", ".cmd"]
+
+    def _run_game(self, game_path):
+        """Decide cómo ejecutar el juego según el SO."""
+        if sys.platform.startswith("win"):
+            return self._run_windows(game_path)
+
+        elif sys.platform.startswith("linux"):
+            if self._needs_wine(game_path):
+                wineprefix = datafiles.config["global"].get(
+                    "wineprefix", os.path.expanduser("~/.wine")
+                )
+                return self._run_linux_wine(game_path, wineprefix)
+            else:
+                return self._run_linux_native(game_path)
+
+        else:
+            raise NotImplementedError(f"SO no soportado: {sys.platform}")
+
+    # ---------------------------
+    # Lógica principal
+    # ---------------------------
     def launch_game(self, platform_name, game_name, game_path, on_game_end=None):
         def execute():
             with self.lock:
                 allow_multiple = datafiles.config["global"].get("allow_multiple_games", False)
-
-                if not allow_multiple:
-                    if self.launched:
-                        logging.info("Ya hay un juego en ejecución, no se puede iniciar otro.")
-                        return
-
-                # Marcar que el juego está lanzado
+                if not allow_multiple and self.launched:
+                    logging.info("Ya hay un juego en ejecución, no se puede iniciar otro.")
+                    return
                 self.launched = True
 
             clean_orphaned_sessions()
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             start_time = time.time()
             start_dt = datetime.now()
-            
-            # Lanza el juego en un proceso nuevo
-            process = subprocess.Popen(game_path)
-                    
+
+            # 🔹 Aquí usamos la capa modular
+            process = self._run_game(game_path)
             pid = process.pid
+
+            # Guardar datos iniciales
             with self.lock:
-                datafiles.config["global"].setdefault("actual_sessions", {})[game_name] = {"pid": pid, "start_time": start_dt.isoformat()}
+                datafiles.config["global"].setdefault("actual_sessions", {})[game_name] = {
+                    "pid": pid,
+                    "start_time": start_dt.isoformat(),
+                }
                 datafiles.config["global"].setdefault("actual_running", {})[game_name] = {"pid": pid}
                 self.save_config()
-            
+
             with open(datafiles.FLAG_FILE, "w") as f:
                 f.write("1")
 
-            # Hilo de guardado periódico cada 5 minutos
+            # ---------------------------
+            # Periodic saver + finalización
+            # ---------------------------
             running = True
-            
             def periodic_saver():
                 while running:
-                    time.sleep(300)  # 5 minutos
+                    time.sleep(300)
                     if not running:
                         break
-                    
-                    # Guardado periódico (cada 5 min aprox)
-                    dur_min = (time.time() - start_time) / 60
-                    
-                    with self.lock:
-                        game_times = datafiles.config[platform_name].setdefault("game_times", {})
-                        game_times.setdefault(game_name, [])
-
-                        # Si hay al menos una sesión previa y la última tiene el mismo "Start"
-                        if game_times[game_name] and game_times[game_name][-1]["Start"] == now:
-                            game_times[game_name][-1]["Tiempo"] = round(dur_min, 2)
-                        else:
-                            # Solo para casos donde no se haya creado antes la sesión (primera vez)
-                            game_times[game_name].append({"Start": now, "Tiempo": round(dur_min, 2)})
-
-                        game_times[game_name] = game_times[game_name][-5:]  # mantener los últimos 5
-                    
-                        # También actualizamos el total aproximado (acumulado estimado)
-                        game_total_times = datafiles.config[platform_name].setdefault("game_total_times", {})
-                        game_total_times.setdefault(game_name, 0.0)
-                        game_total_times[game_name] += 5
-                        self.already_saved[game_name] = True
-
-                        self.save_config()
+                    self._save_playtime(platform_name, game_name, start_time, now)
 
             save_thread = threading.Thread(target=periodic_saver, daemon=True)
             save_thread.start()
-                    
+
             try:
                 process.wait()
             finally:
                 with self.lock:
-                    running = False  # Detiene el guardado periódico
-                    datafiles.config["global"]["actual_running"].pop(game_name, None) #lo elimina de los procesos corriendo ("se cerro correctamente")
-        
-                    # Intentar eliminar la sesión activa
+                    running = False
+                    datafiles.config["global"]["actual_running"].pop(game_name, None)
                     datafiles.config["global"]["actual_sessions"].pop(game_name, None)
-
-                    game_total_times = datafiles.config[platform_name].setdefault("game_total_times", {})
-                    game_total_times.setdefault(game_name, 0.0)
-
-                    game_times = datafiles.config[platform_name].setdefault("game_times", {})
-                    game_times.setdefault(game_name, [])
-
-                    # Guardado final más preciso
-                    dur_min = (time.time() - start_time) / 60
-                    if self.already_saved.get(game_name, False): 
-                        dif = dur_min - game_times[game_name][-1]["Tiempo"]
-                        if dif > 0:
-                            game_total_times[game_name] += round(dif, 2)
-                    else:
-                        game_total_times[game_name] += round(dur_min, 2)
-                
-                    # Si hay al menos una sesión previa y la última tiene el mismo "Start"
-                    if game_times[game_name] and game_times[game_name][-1]["Start"] == now:
-                        game_times[game_name][-1]["Tiempo"] = round(dur_min, 2)
-                    else:
-                        # Solo para casos donde no se haya creado antes la sesión (primera vez)
-                        game_times.setdefault(game_name, []).append({"Start": now, "Tiempo": round(dur_min, 2)})
-                
-                    game_times[game_name] = game_times[game_name][-5:]
-                    self.already_saved.pop(game_name, None)
-
-                    self.save_config()
-                    #reseteamos el estado del launched al cerrar el juego
+                    self._finalize_playtime(platform_name, game_name, start_time, now)
                     self.launched = False
-
                     if on_game_end:
                         on_game_end()
 
-        # Ejecutamos la lógica de lanzamiento del juego en un hilo separado
         thread = threading.Thread(target=execute)
         thread.start()
 
+    # ---------------------------
+    # Helpers de guardado de tiempos
+    # ---------------------------
+    def _save_playtime(self, platform_name, game_name, start_time, now):
+        dur_min = (time.time() - start_time) / 60
+        with self.lock:
+            game_times = datafiles.config[platform_name].setdefault("game_times", {})
+            game_times.setdefault(game_name, [])
+
+            if game_times[game_name] and game_times[game_name][-1]["Start"] == now:
+                game_times[game_name][-1]["Tiempo"] = round(dur_min, 2)
+            else:
+                game_times[game_name].append({"Start": now, "Tiempo": round(dur_min, 2)})
+
+            game_times[game_name] = game_times[game_name][-5:]
+
+            total = datafiles.config[platform_name].setdefault("game_total_times", {})
+            total.setdefault(game_name, 0.0)
+            total[game_name] += 5
+            self.already_saved[game_name] = True
+            self.save_config()
+
+    def _finalize_playtime(self, platform_name, game_name, start_time, now):
+        dur_min = (time.time() - start_time) / 60
+        total = datafiles.config[platform_name].setdefault("game_total_times", {})
+        total.setdefault(game_name, 0.0)
+
+        times = datafiles.config[platform_name].setdefault("game_times", {})
+        times.setdefault(game_name, [])
+
+        if self.already_saved.get(game_name, False):
+            dif = dur_min - times[game_name][-1]["Tiempo"]
+            if dif > 0:
+                total[game_name] += round(dif, 2)
+        else:
+            total[game_name] += round(dur_min, 2)
+
+        if times[game_name] and times[game_name][-1]["Start"] == now:
+            times[game_name][-1]["Tiempo"] = round(dur_min, 2)
+        else:
+            times[game_name].append({"Start": now, "Tiempo": round(dur_min, 2)})
+
+        times[game_name] = times[game_name][-5:]
+        self.already_saved.pop(game_name, None)
+        self.save_config()
+
+    # ---------------------------
     def save_config(self):
         Loader.save_config()
 

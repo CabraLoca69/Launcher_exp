@@ -32,6 +32,7 @@ def main():
         "--onefile",
         f"--icon={ICON_PATH}",
         "--noconsole",
+        "--hidden-import=PIL._tkinter_finder",
         SCRIPT_NAME
     ])
 

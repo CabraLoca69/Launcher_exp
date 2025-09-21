@@ -528,6 +528,8 @@ class GamePlatformFrame(ttk.Frame):
             messagebox.showwarning("Atención", "Selecciona un juego para lanzar")             
 
     def add_exe(self):
+        if hasattr(self, "menu_popup") and self.menu_popup:
+            self.menu_popup.destroy()
         platform_name = self.platform_name
         exe = filedialog.askopenfilename(title="Selecciona un ejecutable")
         if exe:

@@ -6,7 +6,6 @@ import shutil
 
 # Configuración
 SCRIPT_NAME = "launcher69.py"
-ICON_PATH = os.path.join("data", "icons", "icon.ico")
 EXE_NAME = "Launcher69"
 
 def run(cmd):
@@ -24,8 +23,10 @@ def main():
 
     if system == "Windows":
         output_name = f"{EXE_NAME}.exe"
+        ICON_PATH = os.path.join("data", "icons", "icon.ico")
     else:
-        output_name = EXE_NAME  # En Linux/Mac no hay .exe
+        output_name = EXE_NAME # En Linux/Mac no hay .exe
+        ICON_PATH = os.path.join("data", "icons", "icon.png")
 
     run([
         "pyinstaller",

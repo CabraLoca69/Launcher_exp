@@ -14,18 +14,19 @@ class AutoCloseFrame(tb.Frame):
         self.bind_all("<Button-3>", self.check_click_outside)
 
     def check_click_outside(self, event):
-        widget = self.winfo_containing(event.x_root, event.y_root)
+        try:
+            widget = self.winfo_containing(event.x_root, event.y_root)
+            print (widget)
+        except KeyError:
+            widget = None
 
-        # Ignorar widgets internos de Tk (como __tk_choosedir)
-        if widget and str(widget).startswith("__tk_"):
+        if widget and self._is_child_of(widget, self):
             return
 
-        if not widget or not self._is_child_of(widget, self):
-            if self.should_close(widget):
-                self.on_close(event)
+        if self.should_close(widget):
+            self.on_close(event)
 
     def should_close(self, widget):
-        # logica para decidir cerrar
         return True
 
     def on_close(self, event=None):
@@ -66,13 +67,14 @@ class CustomPopupMenu(AutoCloseFrame):
         self.place(x=relative_x, y=relative_y)
         self.lift()
 
+        self.bind_click_outside()
         self._menu_open = True
 
     def on_close(self, event):
         self._menu_open = False
         self.destroy()
-        self.parent.unbind_all("<Button-1>")
-        self.parent.unbind_all("<Button-3>")
+        self.unbind_all("<Button-1>")
+        self.unbind_all("<Button-3>")
         if self.on_close_callback:
             self.on_close_callback(event)
 
@@ -102,18 +104,18 @@ class InputDialog(AutoCloseFrame):
         if confirmed:
             value = self.input_var.get().strip().title()
             if value and self.callback:
+                self.destroy()
                 self.callback(value)
-            self.destroy()
-        
+
         if not confirmed:
             if self.cancel_callback:
+                self.destroy()
                 self.cancel_callback()
-            self.destroy()
-            
+
     def on_close(self, event=None):
         if self.cancel_callback:
+                self.destroy()
                 self.cancel_callback()
-        self.destroy()
 
 class ConfirmDialog(AutoCloseFrame):
     def __init__(self, parent, title="Confirmar", message="¿Estás seguro?", callback=None):
@@ -140,6 +142,6 @@ class ConfirmDialog(AutoCloseFrame):
         self.bind_all("<Escape>", lambda e: self._respond(False))
         
     def _respond(self, confirmed):
-        self.destroy()
         if self.callback:
+            self.destroy()
             self.callback(confirmed)

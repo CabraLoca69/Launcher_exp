@@ -1,5 +1,6 @@
 import os
 import psutil
+import re
 import ttkbootstrap as tb
 from tkinter import StringVar
 
@@ -16,7 +17,6 @@ class AutoCloseFrame(tb.Frame):
     def check_click_outside(self, event):
         try:
             widget = self.winfo_containing(event.x_root, event.y_root)
-            print (widget)
         except KeyError:
             widget = None
 
@@ -28,7 +28,7 @@ class AutoCloseFrame(tb.Frame):
 
     def should_close(self, widget):
         return True
-
+    
     def on_close(self, event=None):
         # comportamiento al cerrar
         self.destroy()

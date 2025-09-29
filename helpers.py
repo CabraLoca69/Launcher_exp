@@ -64,58 +64,6 @@ class Loader:
 
         self.save_config()
 
-    def update_game_list(self, platform_name, game_tree):
-        def get_icon(path):
-            icon = extract_icon(path) or self.default_icon
-            return icon
-
-        def insert_game(parent, name, icon):
-            game_tree.icon_images[name] = icon
-            base_name = os.path.splitext(name)[0]
-            game_tree.insert(parent, "end", iid=name, text="", image=icon, values=(base_name,))
-
-        game_tree.delete(*game_tree.get_children())
-        game_tree.configure(columns=("name",))
-        game_tree.column("#0", width=35, stretch=False)
-        game_tree.column("name", anchor="w", width=200)
-        game_tree.heading("name", text="Nombre del juego")
-
-        game_list = datafiles.config[platform_name]["game_list"]
-        game_times = datafiles.config[platform_name].get("game_times", {})
-        favorites = datafiles.config[platform_name].get("favorites", [])
-
-        if not hasattr(game_tree, "icon_images"):
-            game_tree.icon_images = {}
-
-        if self.grouped:
-            for name, path in sorted(game_list.items(), key=lambda item: self.sort_key(item[0], game_times)):
-                icon = get_icon(path)
-                insert_game("", name, icon)
-        else:
-            favorites_node = game_tree.insert("", "end", text="★ Favoritos", open=True)
-            recent_node = game_tree.insert("", "end", text="⏱ Recientes", open=False)
-            months_nodes = {}
-
-            for name, path in game_list.items():
-                icon = get_icon(path)
-                last_played_str = ""
-
-                if times := game_times.get(name):
-                    try:
-                        last_played = datetime.strptime(times[-1]["Start"], "%Y-%m-%d %H:%M:%S")
-                        last_played_str = last_played.strftime("%Y-%m")
-                    except ValueError:
-                        pass
-
-                if name in favorites:
-                    insert_game(favorites_node, name, icon)
-                elif last_played_str:
-                    if last_played_str not in months_nodes:
-                        months_nodes[last_played_str] = game_tree.insert("", "end", text=f"📆 {last_played_str}", open=False)
-                    insert_game(months_nodes[last_played_str], name, icon)
-                else:
-                    insert_game(recent_node, name, icon)
-
     def sort_key(self, game_name, game_times):
         sessions = game_times.get(game_name, [])
         if sessions:
@@ -162,9 +110,7 @@ class GameLauncherController:
         self.already_saved = {}
         self.lock = threading.Lock()
 
-    # ---------------------------
-    # Helpers de ejecución
-    # ---------------------------
+# Helpers de ejecución
     def _run_windows(self, game_path):
         """Ejecuta un juego en Windows."""
         return subprocess.Popen(game_path)
@@ -206,9 +152,7 @@ class GameLauncherController:
         else:
             raise NotImplementedError(f"SO no soportado: {sys.platform}")
 
-    # ---------------------------
-    # Lógica principal
-    # ---------------------------
+# Lógica principal
     def launch_game(self, platform_name, game_name, game_path, on_game_end=None):
         def execute():
             with self.lock:
@@ -268,9 +212,7 @@ class GameLauncherController:
         thread = threading.Thread(target=execute)
         thread.start()
 
-    # ---------------------------
-    # Helpers de guardado de tiempos
-    # ---------------------------
+# Helpers de guardado de tiempos
     def _save_playtime(self, platform_name, game_name, start_time, now):
         dur_min = (time.time() - start_time) / 60
         with self.lock:
@@ -314,7 +256,6 @@ class GameLauncherController:
         self.already_saved.pop(game_name, None)
         self.save_config()
 
-    # ---------------------------
     def save_config(self):
         Loader.save_config()
 
@@ -364,3 +305,53 @@ def is_process_running(pid):
 
 def extract_icon(path): 
     return get_app_icon(path)
+
+def reload_in_thread(self, on_callback):
+    def worker():
+        all_data = []
+        for platform_name in datafiles.config.get("global", {}).get("tab_order", []):
+            if platform_name in datafiles.config:
+                all_data.append(collect_platform_data(platform_name))
+                
+        # ya tenemos todo, ahora actualizar UI en mainloop
+        self.root.after(0, lambda: on_callback(all_data))
+
+    threading.Thread(target=worker, daemon=True).start()
+
+def collect_platform_data(platform_name):
+    grouped = True
+    default_icon= load_icon(os.path.join(datafiles.ICONS, "no_icon.ico"), size=(16,16))
+    """Prepara datos de una plataforma (sin tocar widgets)."""
+    result = {
+        "platform": platform_name,
+        "games": [],
+        "grouped": [],
+        "favorites": [],
+        "recent": [],
+        "by_month": {}
+    }
+    loader = Loader()
+    game_list = datafiles.config[platform_name]["game_list"]
+    game_times = datafiles.config[platform_name].get("game_times", {})
+    favorites = datafiles.config[platform_name].get("favorites", [])
+
+    if grouped:
+        for name, path in sorted(game_list.items(), key=lambda item: loader.sort_key(item[0], game_times)):
+            game_info = {"name": name, "path": path, "icon": extract_icon(path) or default_icon}
+            result["grouped"].append(game_info)
+    
+    return result
+                
+    """for name, path in game_list.items():
+        game_info = {"name": name, "path": path, "icon": extract_icon(path) or default_icon}
+        if name in favorites:
+            result["favorites"].append(game_info)
+        elif (times := game_times.get(name)):
+            try:
+                last_played = datetime.strptime(times[-1]["Start"], "%Y-%m-%d %H:%M:%S")
+                key = last_played.strftime("%Y-%m")
+                result["by_month"].setdefault(key, []).append(game_info)
+            except ValueError:
+                result["recent"].append(game_info)
+        else:
+            result["recent"].append(game_info)"""

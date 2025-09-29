@@ -16,27 +16,16 @@ def main():
             print("No se encontró el juego.")
             
     else:
-        clean_orphaned_sessions()
-        launcherui = LauncherUI()
-        launcher_controler = GameLauncherController()
-        launcherui.start()
+        clean_orphaned_sessions()  
+        launcherui = LauncherUI() 
+        launcher_controler = GameLauncherController() 
+        launcherui.set()
         
-        #steam = SteamIntegration(config)
-        #if steam.is_ready():
-        #    games = steam.get_owned_games()
-        #    formatted = steam.format_games(games)
-        #    steam.format_and_cache_games(games)
-        #    for game in formatted[:10]:
-        #        print(f"🎮 {game['name']} ({game['appid']}) - {game['time']} hs")
-        #        print(f"🖼 Icono: {game['icon']}")
-        #else:
-        #    print("⚠ No se configuró Steam correctamente.")
 
 if __name__ == "__main__":
     main()
 
-# implementar "pantallas de carga" para que se vea mas lindo
-# separar las clases en los diferentes archivos para mas organizacion
+# si abro un juego seguido del otro no cuenta las horas (Probarlo)
+# actualizar las ultimas sesiones con el launcher abierto
 # intentar coordinar con una nube? que pasa si juego desde otra pc??
-# tratar de integrar ia (para boludear)
 # revisar cerrar el launcher con las notas abiertas no se guarda

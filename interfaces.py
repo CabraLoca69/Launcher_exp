@@ -12,11 +12,25 @@ import tkinter as tk
 from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageTk
-from helpers import Loader, GameLauncherController, extract_icon
+from helpers import Loader, GameLauncherController, extract_icon, reload_in_thread, collect_platform_data
 from icon_utils import set_window_icon, load_icon
 
 if sys.platform.startswith("win"):
     import win32com.client
+
+class SplashFrame(tb.Frame):
+    def __init__(self, parent, title="Cargando..."):
+        super().__init__(parent)
+        self.grid(row=0, column=0, sticky="nsew")
+
+        parent.grid_rowconfigure(0, weight=1)
+        parent.grid_columnconfigure(0, weight=1)
+
+        label = tb.Label(self, text=title, font=("Segoe UI", 32))
+        label.pack(expand=True)
+
+    def close(self):
+        self.destroy()
 
 class LauncherUI:
     def __init__(self):
@@ -24,38 +38,41 @@ class LauncherUI:
         self.root.title("Game Launcher")
         self.root.geometry("900x600")
         self.root.minsize(600, 400)
+        self.grouped = True
         
-        set_window_icon(self.root, "icon.ico")
+        # Splash integrado
+        self.splash = SplashFrame(self.root, title="Cargando Launcher...")
 
-        self.root.grid_rowconfigure(0, weight=1)  # Notebook se expande
+    def init_ui(self):
+        """Inicializa la interfaz real y cierra el splash después de cargar todo."""
+        # Configuración de la ventana
+        self.root.grid_rowconfigure(0, weight=1)
         self.root.grid_columnconfigure(0, weight=1)
-        
+
         # Notebook de plataformas
         self.notebook = DraggableNotebook(self.root)
         self.notebook.grid(row=0, column=0, sticky="nsew")
         
-        # Manager de sesiones 
+        # Manager de sesiones
         self.session_manager = SessionManager(self.root, self)
-
         if datafiles.config:
-            self.notebook.reload()
+            reload_in_thread(self, self.start)
         
+        # Cuando termina de cargar, cerramos el splash
+        self.splash.close()
+        
+    def set(self):
+        self.root.after(100, self.init_ui)        
+        self.root.mainloop()        
+    
+    def start(self, all_data):
+        populate_ui(all_data, self.notebook)
+        self.restore_sessions()
+        self.monitor_sessions()
+          
     def add_session(self, game_name, process, start_time):
         self.session_manager.add_session(game_name, process, start_time)
 
-    def restore_sessions(self):
-        sessions = datafiles.config["global"].get("actual_sessions", {})
-        for game_name, data in sessions.items():
-            pid = data["pid"]
-            start_time_str = data.get("start_time")
-            start_time = datetime.fromisoformat(start_time_str) if start_time_str else datetime.now()
-            try:
-                process = psutil.Process(pid)
-                if process.is_running():
-                    self.add_session(game_name, process, start_time)
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
-    
     def monitor_sessions(self):
         def loop():
             while True:
@@ -73,11 +90,18 @@ class LauncherUI:
                 time.sleep(5)
         threading.Thread(target=loop, daemon=True).start()
 
-    def start(self):
-        self.monitor_sessions()
-        if not os.path.exists(datafiles.FLAG_FILE):
-            self.restore_sessions()
-        self.root.mainloop()
+    def restore_sessions(self):
+        sessions = datafiles.config["global"].get("actual_sessions", {})
+        for game_name, data in sessions.items():
+            pid = data["pid"]
+            start_time_str = data.get("start_time")
+            start_time = datetime.fromisoformat(start_time_str) if start_time_str else datetime.now()
+            try:
+                process = psutil.Process(pid)
+                if process.is_running():
+                    self.add_session(game_name, process, start_time)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
 
 class SessionManager:
     def __init__(self, parent, ui):
@@ -216,9 +240,8 @@ class DraggableNotebook(tb.Notebook):
         self.bind('<B1-Motion>', self.on_mouse_move)
         self.bind("<Button-3>", self.on_right_click)
         self.bind("<<NotebookTabChanged>>", self.on_tab_change)
-                    
-        if not self.tabs():
-            self.pack_emptyframe()
+        
+        self.emptyframe()
          
     def on_button_press(self, event):
         try:
@@ -271,50 +294,42 @@ class DraggableNotebook(tb.Notebook):
     def save_config(self):
         Loader.save_config()
 
-    def reload(self):
-        for platform_name in datafiles.config.get("global", {}).get("tab_order", []):
-            if platform_name in datafiles.config:
-                self.add_platform(platform_name)
-        
-        last_tab_text = datafiles.config["global"].get("last_selected_tab")
-        if not last_tab_text:
-            return
-        
-        for tab_id in self.tabs():
-            if self.tab(tab_id, "text") == last_tab_text:
-                self.select(tab_id)
-                break
-
     def ask_platform_name(self):
         if hasattr(self, "menu_popup") and self.menu_popup:
             self.menu_popup.destroy()
         if not self.input_open:
             self.empty_frame.pack_forget()
             self.input_open = True
-            self.input = custommenus.InputDialog(self, prompt="Nombre de la Plataforma:", callback=self.new_platform, cancel_callback= self.pack_emptyframe).pack()
+            self.input = custommenus.InputDialog(self, prompt="Nombre de la Plataforma:", callback=self.new_platform, cancel_callback= self.emptyframe).pack()
                 
-    def pack_emptyframe(self):
+    def emptyframe(self):
         self.input_open = False 
         if not self.tabs():
             self.empty_frame.pack(fill="both", expand=True)
-               
+        elif self.empty_frame and self.tabs():
+            self.empty_frame.pack_forget()
+                         
     def new_platform(self, platform_name):
         self.input_open = False
         if platform_name: 
             folder = self.loader.add_folder(platform_name)
             if folder:
-                self.add_platform(platform_name)
+                self.emptyframe()
+                
+                call_populate(platform_name, self)
                 datafiles.config.setdefault("global", {})["tab_order"] = [self.tab(i, "text") for i in range(self.index("end"))]
+                
                 self.save_config()
- 
-    def add_platform(self, platform_name): # crea todo el notebook con las pestañas y listboxes necesarios para mostrar los juegos y directorios
-        if platform_name:
-            self.empty_frame.pack_forget()
-            platform_frame = GamePlatformFrame(self, platform_name)
-            self.add(platform_frame, text= platform_name)
-            self.select(platform_frame)
-            self.platform_trees[platform_name] = platform_frame.game_tree
-            self.loader.update_game_list(platform_name, self.platform_trees[platform_name])
+                
+                for i in self.tabs():
+                    if self.tab(i, "text") == platform_name:
+                        self.select(i)
+                        break
+    
+    def call_populate(self, platform_name):
+        all_data = []
+        all_data.append(collect_platform_data(platform_name))
+        populate_ui(all_data,self)
 
     def confirm_remove(self):
         if hasattr(self, "menu_popup") and self.menu_popup:
@@ -360,7 +375,7 @@ class DraggableNotebook(tb.Notebook):
     def open_properties(self, platform_name):
         self.menu_popup.destroy()
         def refresh_tree():
-            self.loader.update_game_list(platform_name, self.platform_trees[platform_name])
+            call_populate(platform_name, self)
             return
         
         def update_tab(new_name, pre_name):
@@ -399,7 +414,7 @@ class GamePlatformFrame(ttk.Frame):
         search_entry = ttk.Entry(search_frame, textvariable=self.search_var)
         search_entry.pack(side="left", fill="x", expand=True)
 
-        btn_clear = tb.Button(search_frame, text="📂", bootstyle="secondary", command=lambda: self.update_game_list(self.platform_name, self.game_tree))
+        btn_clear = tb.Button(search_frame, text="📂", bootstyle="secondary", command=lambda: call_populate(self.platform_name, self.game_tree))
         #btn_clear.pack(side="right", padx=(5, 0))
                 
         # Árbol de juegos a la izquierda
@@ -540,7 +555,7 @@ class GamePlatformFrame(ttk.Frame):
             
             game_list[exe_name] = exe
             self.save_config()
-            self.loader.update_game_list(platform_name, self.game_tree)
+            call_populate(platform_name, self.game_tree)
     
     def confirm_remove(self):
         if hasattr(self, "menu_popup") and self.menu_popup:
@@ -569,14 +584,10 @@ class GamePlatformFrame(ttk.Frame):
                 game_tree.delete(item_id)
                     
             self.save_config()
-        
-    def update_game_list(self, platform_name, game_tree):
-        self.loader.grouped = not self.loader.grouped
-        self.loader.update_game_list(platform_name, game_tree) 
 
     def update_on_close(self, platform_name, game_name, item_id):
         Loader.load_config()
-        self.loader.update_game_list(platform_name, self.game_tree)
+        call_populate(platform_name, self.game_tree)
         self.show_game_details(game_name, item_id)
      
     def filter_games(self, event, search_var):
@@ -590,8 +601,7 @@ class GamePlatformFrame(ttk.Frame):
             game_tree.icon_images = {}
 
         if not search_text:
-            self.loader.grouped = True
-            self.loader.update_game_list(platform_name, game_tree)  # agrupado
+            call_populate(platform_name, game_tree)  # agrupado
             return
 
         results_parent = game_tree.insert("", "end", text="🔍 Resultados", open=True)
@@ -1087,3 +1097,84 @@ class PropertiesWindow(custommenus.AutoCloseFrame):
                 self.warning_label.after(3000, lambda: self.warning_label.config(text=""))
                 self.lift()
                 return
+
+def call_populate(platform_name, target):
+    def worker():
+        all_data = [collect_platform_data(platform_name)]
+        # Una vez listo, volvés al hilo principal
+        target.after(0, lambda: populate_ui(all_data, target))
+
+    threading.Thread(target=worker, daemon=True).start()
+
+def populate_ui(all_data, target):
+    def fill_tree(tree, grouped):
+        """Configura y llena un Treeview con los juegos agrupados"""
+        tree.delete(*tree.get_children())
+        tree.configure(columns=("name",))
+        tree.column("#0", width=35, stretch=False)
+        tree.column("name", anchor="w", width=200)
+        tree.heading("name", text="Nombre del juego")
+
+        if not hasattr(tree, "icon_images"):
+            tree.icon_images = {}
+        
+        for g in grouped:
+            tree.icon_images[g["name"]] = g["icon"]
+            tree.insert("", "end", iid=g["name"], text="", image=g["icon"], values=(g["name"],))
+            
+        #Favoritos
+        #fav_node = tree.insert("", "end", text="★ Favoritos", open=True)
+        #for g in pdata["favorites"]:
+            #tree.icon_images[g["name"]] = g["icon"]
+            #tree.insert(fav_node, "end", iid=g["name"], text="", image=g["icon"], values=(g["name"],))
+
+        # Recientes
+        #rec_node = tree.insert("", "end", text="⏱ Recientes", open=False)
+        #for g in pdata["recent"]:
+            #tree.icon_images[g["name"]] = g["icon"]
+            #tree.insert(rec_node, "end", iid=g["name"], text="", image=g["icon"], values=(g["name"],))
+                
+        # Por mes
+        #for month, juegos in pdata["by_month"].items():
+            #node = tree.insert("", "end", text=f"📆 {month}", open=False)
+            #for g in juegos:
+                #tree.icon_images[g["name"]] = g["icon"]
+                #tree.insert(node, "end", iid=g["name"], text="", image=g["icon"], values=(g["name"],))"""
+            
+    for pdata in all_data:
+        
+        platform_name = pdata["platform"]
+        
+        
+        # Caso 1: target es un Treeview directo
+        if isinstance(target, ttk.Treeview):
+            is_tree = True
+            fill_tree(target, pdata["grouped"])
+
+        # Caso 2: target es un Notebook
+        else:
+            existing_tab = None
+            is_tree = False
+            for tab_id in target.tabs():
+                if target.tab(tab_id, "text") == platform_name:
+                    existing_tab = tab_id
+                    break
+
+            if existing_tab:
+                platform_frame = target.nametowidget(existing_tab)
+                tree = platform_frame.game_tree
+                target.select(existing_tab)
+            else:
+                platform_frame = GamePlatformFrame(target, platform_name)
+                target.add(platform_frame, text=platform_name)
+                target.platform_trees[platform_name] = platform_frame.game_tree
+                tree = platform_frame.game_tree
+                target.select(platform_frame)
+
+            fill_tree(tree, pdata["grouped"])
+        
+        if not is_tree:    
+            target.emptyframe()
+        
+
+

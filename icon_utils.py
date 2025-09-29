@@ -5,7 +5,6 @@ import subprocess
 from pathlib import Path
 from PIL import Image, ImageTk
 
-
 # Windows-only imports
 if platform.system() == "Windows":
     import win32gui
@@ -82,7 +81,8 @@ def _get_windows_icon(exe_path, size, fallback_icon):
 
     except Exception as e:
         print(f"[WARN] No se pudo extraer ícono de {exe_path}: {e}")
-
+    if fallback_icon == None:
+        fallback_icon = os.path.join(datafiles.ICONS , "no_icon.ico")
     return Image.open(fallback_icon).resize(size, Image.LANCZOS)
 
 # ---------------- Linux ---------------- #
@@ -147,7 +147,6 @@ def set_window_icon(window, icon_name="icon.ico"):
         photo = ImageTk.PhotoImage(img)
         window.tk.call('wm', 'iconphoto', window._w, photo)
         window._icon_photo = photo  # mantener referencia
-
 
 def is_wine_executable(path: str) -> bool:
     """

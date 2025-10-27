@@ -58,15 +58,18 @@ class LauncherUI:
         if datafiles.config:
             reload_in_thread(self, self.start)
         
+        if datafiles.config.get("tab_order") is None:
+            self.notebook.emptyframe()
+        
         # Cuando termina de cargar, cerramos el splash
         self.splash.close()
         
     def set(self):
-        self.root.after(100, self.init_ui)        
+        self.root.after(300, self.init_ui)        
         self.root.mainloop()        
     
     def start(self, all_data):
-        populate_ui(all_data, self.notebook)
+        populate_ui(all_data, self.notebook, False)
         self.restore_sessions()
         self.monitor_sessions()
           
@@ -236,38 +239,40 @@ class DraggableNotebook(tb.Notebook):
                 
         # los comandos de las pestañas
         self.bind('<ButtonPress-1>', self.on_button_press, True)
-        self.bind('<ButtonRelease-1>', self.on_button_release)
         self.bind('<B1-Motion>', self.on_mouse_move)
+        self.bind('<ButtonRelease-1>', self.on_button_release)
         self.bind("<Button-3>", self.on_right_click)
         self.bind("<<NotebookTabChanged>>", self.on_tab_change)
-        
-        self.emptyframe()
          
     def on_button_press(self, event):
+        # Cerrar menús flotantes si existen
+        if hasattr(self, "menu_popup"):
+            try:
+                self.menu_popup.destroy()
+            except:
+                pass
+
         try:
-            self.menu_popup.destroy()
-            self._active = self.index("@%d,%d" % (event.x, event.y))
-            return 
-        except:
-            pass
+            self._active = self.index(f"@{event.x},{event.y}")
+        except tk.TclError:
+            self._active = None
 
     def on_button_release(self, event):
-        if self._active is None:
-            return
-        try:
-            index = self.index("@%d,%d" % (event.x, event.y))
-            if index != self._active:
-                self.insert(index, self._active)
-        except:
-            self.insert(self.index("end")-1, self._active)
-        
-        datafiles.config.setdefault("global", {})["tab_order"] = [self.tab(i, "text") for i in range(self.index("end"))]
-        self.save_config()
-                                   
+        if self._active is not None:
+            self.save_tab_order()
         self._active = None
 
     def on_mouse_move(self, event):
-        pass  # Podés agregar una animación si querés
+        if self._active is None:
+            return
+
+        try:
+            index = self.index(f"@{event.x},{event.y}")
+            if index != self._active:
+                self.insert(index, self._active)
+                self._active = index
+        except tk.TclError:
+            pass
     
     def on_right_click(self, event):        
         try:
@@ -282,6 +287,11 @@ class DraggableNotebook(tb.Notebook):
                 tab_text = None
 
         self.show_menu(tab_text, event.x_root, event.y_root)
+
+    def save_tab_order(self):   
+        order = [self.tab(i, "text") for i in range(self.index("end"))]
+        datafiles.config.setdefault("global", {})["tab_order"] = order
+        self.save_config()
 
     def on_tab_change(self, event):
         try:     
@@ -330,6 +340,7 @@ class DraggableNotebook(tb.Notebook):
         all_data = []
         all_data.append(collect_platform_data(platform_name))
         populate_ui(all_data,self)
+        self.save_tab_order()
 
     def confirm_remove(self):
         if hasattr(self, "menu_popup") and self.menu_popup:
@@ -1106,8 +1117,8 @@ def call_populate(platform_name, target):
 
     threading.Thread(target=worker, daemon=True).start()
 
-def populate_ui(all_data, target):
-    def fill_tree(tree, grouped):
+def populate_ui(all_data, target, select_new= True):
+    def fill_tree(tree, grouped):     
         """Configura y llena un Treeview con los juegos agrupados"""
         tree.delete(*tree.get_children())
         tree.configure(columns=("name",))
@@ -1142,7 +1153,6 @@ def populate_ui(all_data, target):
                 #tree.insert(node, "end", iid=g["name"], text="", image=g["icon"], values=(g["name"],))"""
             
     for pdata in all_data:
-        
         platform_name = pdata["platform"]
         
         
@@ -1163,18 +1173,27 @@ def populate_ui(all_data, target):
             if existing_tab:
                 platform_frame = target.nametowidget(existing_tab)
                 tree = platform_frame.game_tree
-                target.select(existing_tab)
+                if select_new:
+                    target.select(existing_tab)
             else:
                 platform_frame = GamePlatformFrame(target, platform_name)
                 target.add(platform_frame, text=platform_name)
                 target.platform_trees[platform_name] = platform_frame.game_tree
                 tree = platform_frame.game_tree
-                target.select(platform_frame)
-
+                if select_new:
+                    target.select(platform_frame)
+                    
+                target.save_tab_order()
+            
             fill_tree(tree, pdata["grouped"])
         
-        if not is_tree:    
+        if not is_tree:
             target.emptyframe()
         
-
-
+        if not select_new:    
+            last_tab = datafiles.config["global"].get("last_selected_tab")
+            if last_tab:
+                for tab_id in target.tabs():
+                    if target.tab(tab_id, "text") == last_tab:
+                        target.select(tab_id)
+                        break

@@ -20,12 +20,10 @@ def main():
         launcherui = LauncherUI() 
         launcher_controler = GameLauncherController() 
         launcherui.set()
-        
 
 if __name__ == "__main__":
     main()
 
 # si abro un juego seguido del otro no cuenta las horas (Probarlo)
-# actualizar las ultimas sesiones con el launcher abierto
 # intentar coordinar con una nube? que pasa si juego desde otra pc??
 # revisar cerrar el launcher con las notas abiertas no se guarda

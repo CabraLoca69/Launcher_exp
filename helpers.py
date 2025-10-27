@@ -312,7 +312,7 @@ def reload_in_thread(self, on_callback):
         for platform_name in datafiles.config.get("global", {}).get("tab_order", []):
             if platform_name in datafiles.config:
                 all_data.append(collect_platform_data(platform_name))
-                
+                                
         # ya tenemos todo, ahora actualizar UI en mainloop
         self.root.after(0, lambda: on_callback(all_data))
 
@@ -339,7 +339,6 @@ def collect_platform_data(platform_name):
         for name, path in sorted(game_list.items(), key=lambda item: loader.sort_key(item[0], game_times)):
             game_info = {"name": name, "path": path, "icon": extract_icon(path) or default_icon}
             result["grouped"].append(game_info)
-    
     return result
                 
     """for name, path in game_list.items():

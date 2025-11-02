@@ -68,6 +68,6 @@ config.setdefault("global", {}).setdefault("allow_multiple_games", False)
 def remove_temp_path():
     try:
         os.remove(TEMP_PATH)
-    except PermissionError:
+    except:
         print(f"⚠ No se pudo borrar")
 

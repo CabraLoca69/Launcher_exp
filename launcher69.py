@@ -35,7 +35,7 @@ def main():
 if __name__ == "__main__":
     main()
 
-# usar hilos para las tareas de la nube
+# se cuelga al iniciar sesion y rompe el autocloseframe que muestra esa interfaz
 # revisar boton de jugar desde favoritos
 # si abro un juego seguido del otro no cuenta las horas (Probarlo)
 # revisar cerrar el launcher con las notas abiertas no se guarda

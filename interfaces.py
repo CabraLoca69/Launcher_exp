@@ -847,7 +847,6 @@ class GameDetailsPanel(tb.Frame):
                     tb.Button(frame, text="▶", width=3, bootstyle="success-outline",
                             command=self.launch_game).pack(side="right")
                     
-
     def clean_info(self):
         for widget in self.winfo_children():
             widget.destroy()
@@ -1214,21 +1213,34 @@ class CloudSettingsWindow(custommenus.AutoCloseFrame):
 
     def recall_token(self, respond):
         if respond:
-            token_path = datafiles.DATA_DIR / "token.json"
+            self.destroy()
+        def worker():
+            if respond:
+                token_path = datafiles.DATA_DIR / "token.json"
 
-            if not datafiles.config["global"]["cloud_sync_enabled"]:
-                datafiles.config.setdefault("global", {})["cloud_sync_enabled"] = True
-                self.auto_sync_var.set(True)
+                if not datafiles.config["global"]["cloud_sync_enabled"]:
+                    datafiles.config.setdefault("global", {})["cloud_sync_enabled"] = True
+                    # actualizar variable de Tkinter desde el hilo principal
+                    self.root.after(0, lambda: self.auto_sync_var.set(True))
                 
-            if token_path.exists():
-                token_path.unlink()
+                if token_path.exists():
+                    token_path.unlink()
                 
-            service, creds = get_drive_service()
-            self.service = service
-            self.parent.service = self.service
-            datafiles.config["global"]["email"] = self.get_user_email(creds)
-            Loader.save_config()
-            self.account_label.config(text=self.get_account_info())
+                try:
+                    service, creds = get_drive_service()
+                except Exception:
+                    return
+                
+                self.service = service
+                self.parent.service = self.service
+                datafiles.config["global"]["email"] = self.get_user_email(creds)
+                Loader.save_config()
+
+                # actualizar label en el hilo principal
+                account_text = self.get_account_info()
+                self.root.after(0, lambda: self.account_label.config(text=account_text))
+
+        threading.Thread(target=worker, daemon=True).start()
             
     def get_user_email(self, creds):
         service = build("oauth2", "v2", credentials=creds)

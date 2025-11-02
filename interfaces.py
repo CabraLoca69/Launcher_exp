@@ -766,7 +766,10 @@ class GameDetailsPanel(tb.Frame):
         game_tree = self.launcher_controller.game_tree
         
         # Datos
-        total_time = datafiles.config.get(self.platform_name, {}).get("game_total_times", {}).get(self.game_name, {}).get(get_machine_id(), 0.0)
+        times_for_pc = datafiles.config.get(self.platform_name, {}).get("game_total_times", {}).get(self.game_name, {})
+        total_time = 0.0
+        for pcids in times_for_pc:
+            total_time = total_time + times_for_pc.get(pcids, 0.0)
         sessions = list(reversed(datafiles.config.get(self.platform_name, {}).get("game_times", {}).get(self.game_name, [])))
 
         # === Barra superior ===

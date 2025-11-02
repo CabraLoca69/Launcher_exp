@@ -38,6 +38,7 @@ TOKEN_PATH = DATA_DIR / "token.json"
 CREDENTIALS_PATH = DATA_DIR / "credentials.json"
 DRIVE_FOLDER_NAME = "GameLauncherData"
 BACKUP_FILE_NAME = "playtime_backup.json"
+TEMP_PATH = DATA_DIR / BACKUP_FILE_NAME
 
 # ------------------------------
 # Lock global para operaciones de config
@@ -63,4 +64,10 @@ else:
 config.setdefault("global", {}).setdefault("cloud_sync_enabled", False)
 config.setdefault("global", {}).setdefault("email", None)
 config.setdefault("global", {}).setdefault("allow_multiple_games", False)
+
+def remove_temp_path():
+    try:
+        os.remove(TEMP_PATH)
+    except PermissionError:
+        print(f"⚠ No se pudo borrar")
 

@@ -193,7 +193,8 @@ class GameLauncherController:
                     time.sleep(300)
                     if not running:
                         break
-                    call_upload()
+                    if datafiles.config["global"]["cloud_sync_enabled"]:
+                        call_upload()
                     self._save_playtime(platform_name, game_name, start_time, now)
 
             save_thread = threading.Thread(target=periodic_saver, daemon=True)
@@ -256,8 +257,9 @@ class GameLauncherController:
         times[game_name] = times[game_name][-5:]
         self.already_saved.pop(game_name, None)
         self.save_config()
-        time.sleep(2)
-        call_upload()
+        if datafiles.config["global"]["cloud_sync_enabled"]:
+            time.sleep(2)
+            call_upload()
 
     def save_config(self):
         Loader.save_config()

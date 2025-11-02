@@ -8,11 +8,12 @@ import time
 import sys
 import datafiles
 import signal
+from machine_id import get_machine_id
+from cloudsync import call_upload
 from datetime import datetime
 from PIL import Image, ImageTk
 from tkinter import filedialog
 from icon_utils import get_app_icon, load_icon
-
 
 class Loader:
     def __init__(self):
@@ -192,6 +193,7 @@ class GameLauncherController:
                     time.sleep(300)
                     if not running:
                         break
+                    call_upload()
                     self._save_playtime(platform_name, game_name, start_time, now)
 
             save_thread = threading.Thread(target=periodic_saver, daemon=True)
@@ -226,26 +228,25 @@ class GameLauncherController:
 
             game_times[game_name] = game_times[game_name][-5:]
 
-            total = datafiles.config[platform_name].setdefault("game_total_times", {})
-            total.setdefault(game_name, 0.0)
-            total[game_name] += 5
+            pcid = get_machine_id()
+            total = datafiles.config[platform_name].setdefault("game_total_times", {}).setdefault(game_name, {}).setdefault(pcid, 0.0)
+            total += 5
             self.already_saved[game_name] = True
             self.save_config()
 
     def _finalize_playtime(self, platform_name, game_name, start_time, now):
+        pcid = get_machine_id()
         dur_min = (time.time() - start_time) / 60
-        total = datafiles.config[platform_name].setdefault("game_total_times", {})
-        total.setdefault(game_name, 0.0)
-
+        total = datafiles.config[platform_name].setdefault("game_total_times", {}).setdefault(game_name, {}).setdefault(pcid, 0.0)
         times = datafiles.config[platform_name].setdefault("game_times", {})
         times.setdefault(game_name, [])
 
         if self.already_saved.get(game_name, False):
             dif = dur_min - times[game_name][-1]["Tiempo"]
             if dif > 0:
-                total[game_name] += round(dif, 2)
+                total += round(dif, 2)
         else:
-            total[game_name] += round(dur_min, 2)
+            total += round(dur_min, 2)
 
         if times[game_name] and times[game_name][-1]["Start"] == now:
             times[game_name][-1]["Tiempo"] = round(dur_min, 2)
@@ -255,6 +256,8 @@ class GameLauncherController:
         times[game_name] = times[game_name][-5:]
         self.already_saved.pop(game_name, None)
         self.save_config()
+        time.sleep(2)
+        call_upload()
 
     def save_config(self):
         Loader.save_config()
@@ -354,3 +357,5 @@ def collect_platform_data(platform_name):
                 result["recent"].append(game_info)
         else:
             result["recent"].append(game_info)"""
+            
+

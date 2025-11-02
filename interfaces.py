@@ -9,11 +9,17 @@ import datafiles
 import custommenus
 import ttkbootstrap as tb
 import tkinter as tk
+from machine_id import get_machine_id
+from googleapiclient.discovery import build
+from ttkbootstrap.toast import ToastNotification
+from ttkbootstrap.dialogs import Messagebox
 from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageTk
 from helpers import Loader, GameLauncherController, extract_icon, reload_in_thread, collect_platform_data
 from icon_utils import set_window_icon, load_icon
+from cloudsync import get_drive_service
+from custommenus import ConfirmDialog
 
 if sys.platform.startswith("win"):
     import win32com.client
@@ -35,7 +41,7 @@ class SplashFrame(tb.Frame):
 class LauncherUI:
     def __init__(self):
         self.root = tb.Window(themename="darkly")
-        self.root.title("Game Launcher")
+        self.root.title("CLauncher69")
         self.root.geometry("900x600")
         self.root.minsize(600, 400)
         self.grouped = True
@@ -49,9 +55,10 @@ class LauncherUI:
         self.root.grid_rowconfigure(0, weight=1)
         self.root.grid_columnconfigure(0, weight=1)
 
+
         # Notebook de plataformas
-        self.notebook = DraggableNotebook(self.root)
-        self.notebook.grid(row=0, column=0, sticky="nsew")
+        self.app = MainLauncherFrame(self.root)
+        self.app.grid(row=0, column=0, sticky="nsew")
         
         # Manager de sesiones
         self.session_manager = SessionManager(self.root, self)
@@ -59,7 +66,7 @@ class LauncherUI:
             reload_in_thread(self, self.start)
         
         if datafiles.config.get("tab_order") is None:
-            self.notebook.emptyframe()
+            self.app.notebook.emptyframe()
         
         # Cuando termina de cargar, cerramos el splash
         self.splash.close()
@@ -69,7 +76,7 @@ class LauncherUI:
         self.root.mainloop()        
     
     def start(self, all_data):
-        populate_ui(all_data, self.notebook, False)
+        populate_ui(all_data, self.app.notebook, False)
         self.restore_sessions()
         self.monitor_sessions()
           
@@ -221,21 +228,57 @@ class SessionManager:
         self.parent.grid_rowconfigure(0, weight=1)
         self.parent.grid_rowconfigure(1, weight=0)
 
+class MainLauncherFrame(tb.Frame):
+    def __init__(self, master=None, **kw):
+        super().__init__(master, **kw)
+        
+        # --- Top bar fija ---
+        top_bar = tb.Frame(self, bootstyle="dark")
+        top_bar.pack(fill="x")
+
+        email = (datafiles.config.get("global", {}).get("email") or "Desconocido")
+
+        self.title_label = tb.Label(top_bar, text=f"Cuenta: {email}", font=("Segoe UI", 11, "bold"), bootstyle="inverse-dark")
+        self.title_label.pack(side="left", padx=10, pady=5)
+
+        # Botón de sincronización
+        sync_btn = tb.Button(top_bar, text="☁ Sincronización", bootstyle="info-outline", command=self.open_cloud_settings)
+        sync_btn.pack(side="right", padx=10, pady=5)
+
+        # Botón de agregar plataformas
+        add_btn = tb.Button(top_bar, text="🞧 Agregar plataforma", bootstyle="info-outline", command= self.ask_platform_name)
+        add_btn.pack(side="right", padx=10, pady=5)
+
+        # --- Contenido principal: tu Notebook ---
+        self.notebook = DraggableNotebook(self)
+        self.notebook.pack(fill="both", expand=True, padx=5, pady=5)
+
+    def open_cloud_settings(self):
+        self.notebook.open_cloud_settings()
+
+    def ask_platform_name(self):
+        self.notebook.ask_platform_name()
+
+    def update_title_label(self):
+        email = (datafiles.config.get("global", {}).get("email") or "Desconocido")
+        self.title_label.config(text=f"Cuenta: {email}")
+        
 class DraggableNotebook(tb.Notebook):
     def __init__(self, master=None, **kw):
         super().__init__(master, **kw)
+        self.master = master
         self._active = None
         self.active_popup= None
         self.input_open = False
         self.FAVORITE_LIMIT = 5
         self.platform_trees = {}
         self.loader = Loader()
-        self.default_icon= load_icon(os.path.join(datafiles.ICONS, "no_icon.ico"), size=(16,16)) 
+        self.default_icon= load_icon(os.path.join(datafiles.ICONS, "no_icon.ico"), size=(16,16))
+        self.service = None
                         
         # este frame se usa cuando no hay tabs (plataformas)
         self.empty_frame = tb.Frame(self)
         tb.Label(self.empty_frame, text="🚫 No hay plataformas configuradas", font=("Segoe UI", 12, "bold"), bootstyle="warning").pack(pady=10)
-        tb.Button(self.empty_frame, text="🞧 Agregar plataforma", bootstyle="info-outline", width=25, command= self.ask_platform_name).pack()
                 
         # los comandos de las pestañas
         self.bind('<ButtonPress-1>', self.on_button_press, True)
@@ -311,14 +354,14 @@ class DraggableNotebook(tb.Notebook):
             self.empty_frame.pack_forget()
             self.input_open = True
             self.input = custommenus.InputDialog(self, prompt="Nombre de la Plataforma:", callback=self.new_platform, cancel_callback= self.emptyframe).pack()
-                
+
     def emptyframe(self):
         self.input_open = False 
         if not self.tabs():
             self.empty_frame.pack(fill="both", expand=True)
         elif self.empty_frame and self.tabs():
             self.empty_frame.pack_forget()
-                         
+                                      
     def new_platform(self, platform_name):
         self.input_open = False
         if platform_name: 
@@ -375,11 +418,8 @@ class DraggableNotebook(tb.Notebook):
         self.menu_popup = custommenus.CustomPopupMenu(self)
         
         if platform_name:  
-            self.menu_popup.add_button("🞧 Agregar plataforma", 25, "success-outline", self.ask_platform_name)
             self.menu_popup.add_button("🗑 Eliminar plataforma", 25, "danger-outline", self.confirm_remove)
             self.menu_popup.add_button("⚙ Propiedades", 25, "info-outline", lambda: self.open_properties(self.tab(self._active, "text")))
-        else:
-            self.menu_popup.add_button("🞧 Agregar plataforma", 25, "success-outline", self.ask_platform_name)
         
         self.menu_popup.show(x_root, y_root)
   
@@ -400,6 +440,14 @@ class DraggableNotebook(tb.Notebook):
         self.properties_window = PropertiesWindow(self, platform_name, self.platform_trees[platform_name], on_update_callback= refresh_tree, on_update_tab=update_tab)
         self.properties_window.pack()        
 
+    def open_cloud_settings(self):
+        self.empty_frame.pack_forget()
+        CloudSettingsWindow(self, self.service, on_close_callback= self.on_close_cloudwdw).pack()
+        
+    def on_close_cloudwdw(self):
+        self.emptyframe()
+        self.master.update_title_label()
+           
 class GamePlatformFrame(ttk.Frame):
     def __init__(self, master, platform_name, *args, **kwargs):
         super().__init__(master, *args, **kwargs)
@@ -718,7 +766,7 @@ class GameDetailsPanel(tb.Frame):
         game_tree = self.launcher_controller.game_tree
         
         # Datos
-        total_time = datafiles.config.get(self.platform_name, {}).get("game_total_times", {}).get(self.game_name, 0.0)
+        total_time = datafiles.config.get(self.platform_name, {}).get("game_total_times", {}).get(self.game_name, {}).get(get_machine_id(), 0.0)
         sessions = list(reversed(datafiles.config.get(self.platform_name, {}).get("game_times", {}).get(self.game_name, [])))
 
         # === Barra superior ===
@@ -794,7 +842,8 @@ class GameDetailsPanel(tb.Frame):
 
                     # Botón rápido de jugar
                     tb.Button(frame, text="▶", width=3, bootstyle="success-outline",
-                            command=lambda name=game_name: self.launch_game(name)).pack(side="right")
+                            command=self.launch_game).pack(side="right")
+                    
 
     def clean_info(self):
         for widget in self.winfo_children():
@@ -1109,6 +1158,81 @@ class PropertiesWindow(custommenus.AutoCloseFrame):
                 self.lift()
                 return
 
+class CloudSettingsWindow(custommenus.AutoCloseFrame):
+    def __init__(self, parent, service=None, folder_id=None, on_close_callback=None, **kwargs):
+        super().__init__(parent, on_close_callback=on_close_callback, **kwargs)
+        self.on_close_callback = on_close_callback
+        self.service = service
+        self.folder_id = folder_id
+        self.parent = parent
+        
+        self.build_ui()
+        
+        # Close on Escape
+        self.bind("<Escape>", lambda e: self.destroy())
+
+    def build_ui(self):
+        # Notebook principal
+        self.notebook = tb.Notebook(self, bootstyle="primary")
+        self.notebook.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # === Pestaña de sincronización ===
+        self.sync_tab = tb.Frame(self.notebook)
+        self.notebook.add(self.sync_tab, text="☁️ Sincronización")
+
+        # Checkbox para sincronización automática
+        self.auto_sync_var = tk.BooleanVar(value=datafiles.config.get("global", {}).get("cloud_sync_enabled", False))
+        chk_sync = tb.Checkbutton(self.sync_tab, text="Habilitar sincronización automática", variable=self.auto_sync_var, bootstyle="success", command=self.save_sync_setting)
+        chk_sync.pack(pady=20, padx=20, anchor="w")
+
+        # Etiqueta con info de la cuenta
+        self.account_label = tb.Label(self.sync_tab, text=self.get_account_info(), bootstyle="secondary", font=("Segoe UI", 10))
+        self.account_label.pack(pady=20, padx=20)
+
+        # Botón para cambiar de cuenta
+        btn_change_account = tb.Button(
+        self.sync_tab, text="🔄 Cambiar cuenta", bootstyle="warning-outline", command=self.change_account)
+        btn_change_account.pack(pady=10, padx=20)
+        
+    # === Funciones de sincronización ===
+    def save_sync_setting(self):
+        datafiles.config.setdefault("global", {})["cloud_sync_enabled"] = self.auto_sync_var.get()
+        if not datafiles.config["global"]["email"]:
+            self.recall_token(True)
+            
+    # === Funciones de cuenta ===
+    def get_account_info(self):
+        if datafiles.config["global"]["email"]:
+            return datafiles.config["global"]["email"]
+        return "desconocido"
+
+    def change_account(self):
+        ConfirmDialog(self, title="Deberas volver a iniciar sesion", message= "¿Estas seguro?", callback=self.recall_token).place(relx=0.5, rely=0.5, anchor="center")
+
+    def recall_token(self, respond):
+        if respond:
+            token_path = datafiles.DATA_DIR / "token.json"
+
+            if not datafiles.config["global"]["cloud_sync_enabled"]:
+                datafiles.config.setdefault("global", {})["cloud_sync_enabled"] = True
+                self.auto_sync_var.set(True)
+                
+            if token_path.exists():
+                token_path.unlink()
+                
+            service, creds = get_drive_service()
+            self.service = service
+            self.parent.service = self.service
+            datafiles.config["global"]["email"] = self.get_user_email(creds)
+            Loader.save_config()
+            self.account_label.config(text=self.get_account_info())
+            
+    def get_user_email(self, creds):
+        service = build("oauth2", "v2", credentials=creds)
+        user_info = service.userinfo().get().execute()
+        return user_info.get("email", "desconocido")
+
+    
 def call_populate(platform_name, target):
     def worker():
         all_data = [collect_platform_data(platform_name)]

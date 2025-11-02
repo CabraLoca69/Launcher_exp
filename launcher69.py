@@ -1,8 +1,11 @@
 
 import sys
 import datafiles
+import cloudsync
 from interfaces import LauncherUI
 from helpers import GameLauncherController, clean_orphaned_sessions
+
+
 
 def main():
     if "--launch" in sys.argv and "--platform" in sys.argv:
@@ -16,14 +19,20 @@ def main():
             print("No se encontró el juego.")
             
     else:
+        if datafiles.config["global"].get("cloud_sync_enabled"):
+            cloudsync.call_merge()
+
         clean_orphaned_sessions()  
         launcherui = LauncherUI() 
-        launcher_controler = GameLauncherController() 
+        launcher_controler = GameLauncherController()
         launcherui.set()
+        
+
 
 if __name__ == "__main__":
     main()
 
+# revisar boton de jugar desde favoritos
 # si abro un juego seguido del otro no cuenta las horas (Probarlo)
 # intentar coordinar con una nube? que pasa si juego desde otra pc??
 # revisar cerrar el launcher con las notas abiertas no se guarda

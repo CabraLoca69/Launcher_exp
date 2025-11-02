@@ -5,9 +5,9 @@ import ttkbootstrap as tb
 from tkinter import StringVar
 
 class AutoCloseFrame(tb.Frame):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, on_close_callback=None, **kwargs):
         super().__init__(*args, **kwargs)
-
+        self.on_close_callback = on_close_callback
         self.after(100, self.bind_click_outside)
 
     def bind_click_outside(self):
@@ -30,7 +30,8 @@ class AutoCloseFrame(tb.Frame):
         return True
     
     def on_close(self, event=None):
-        # comportamiento al cerrar
+        if self.on_close_callback:
+            self.on_close_callback()
         self.destroy()
 
     def _is_child_of(self, widget, parent):

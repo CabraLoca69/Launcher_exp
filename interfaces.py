@@ -1214,6 +1214,9 @@ class CloudSettingsWindow(custommenus.AutoCloseFrame):
     def recall_token(self, respond):
         if respond:
             self.destroy()
+        if not respond:
+            self.destroy()
+            
         def worker():
             if respond:
                 token_path = datafiles.DATA_DIR / "token.json"

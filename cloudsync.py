@@ -19,9 +19,6 @@ SCOPES = [
     'openid'
 ]
 
-# ------------------------------
-# Servicio de Google Drive
-# ------------------------------
 def get_drive_service():
     creds = None
     if TOKEN_PATH.exists():
@@ -37,8 +34,6 @@ def get_drive_service():
     service = build("drive", "v3", credentials=creds)
     return service, creds
 
-# Crear carpeta en Drive si no existe
-# ------------------------------
 def get_or_create_folder(service):
     query = f"name='{DRIVE_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
     results = service.files().list(q=query, fields="files(id)").execute()
@@ -50,9 +45,6 @@ def get_or_create_folder(service):
     folder = service.files().create(body=file_metadata, fields="id").execute()
     return folder["id"]
 
-# ------------------------------
-# Subir o actualizar backup
-# ------------------------------
 def upload_backup(service, folder_id, backup_data):
     """
     Sube o actualiza el archivo JSON de backup en Google Drive.
@@ -86,9 +78,6 @@ def upload_backup(service, folder_id, backup_data):
         except PermissionError:
             pass
 
-# ------------------------------
-# Descargar backup
-# ------------------------------
 def download_backup(service, folder_id):
     query = f"name='{BACKUP_FILE_NAME}' and '{folder_id}' in parents and trashed=false"
     results = service.files().list(q=query, fields="files(id, name)").execute()
@@ -115,9 +104,6 @@ def download_backup(service, folder_id):
         #print("⚠ Error al leer el backup (formato inválido).")
         return {}
 
-# ------------------------------
-#construye el diccionario para subir a drive   
-# ------------------------------
 def build_cloud_payload_for_upload(existing_data=None):
     pc_id = get_machine_id()
 
@@ -193,7 +179,6 @@ def call_merge():
         download_and_merge_backup(CONFIG_FILE)
     threading.Thread(target=worker, daemon=True).start()
     
-
 def call_upload():
     def worker():
         if not has_internet_http():

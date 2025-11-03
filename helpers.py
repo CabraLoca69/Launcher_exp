@@ -230,25 +230,30 @@ class GameLauncherController:
             game_times[game_name] = game_times[game_name][-5:]
 
             pcid = get_machine_id()
-            total = datafiles.config[platform_name].setdefault("game_total_times", {}).setdefault(game_name, {}).setdefault(pcid, 0.0)
-            total += 5
+            game_total_times = datafiles.config[platform_name].setdefault("game_total_times", {}).setdefault(game_name, {})
+            total = game_total_times.setdefault(pcid, 0.0)
+            game_total_times[pcid] = total + 5
             self.already_saved[game_name] = True
             self.save_config()
 
     def _finalize_playtime(self, platform_name, game_name, start_time, now):
         pcid = get_machine_id()
         dur_min = (time.time() - start_time) / 60
-        total = datafiles.config[platform_name].setdefault("game_total_times", {}).setdefault(game_name, {}).setdefault(pcid, 0.0)
+        
+        game_total_times = datafiles.config[platform_name].setdefault("game_total_times", {}).setdefault(game_name, {})
+        total= game_total_times.setdefault(pcid, 0.0)
+        
         times = datafiles.config[platform_name].setdefault("game_times", {})
         times.setdefault(game_name, [])
 
         if self.already_saved.get(game_name, False):
             dif = dur_min - times[game_name][-1]["Tiempo"]
             if dif > 0:
-                total += round(dif, 2)
+                game_total_times[pcid] = total + round(dif, 2)
         else:
-            total += round(dur_min, 2)
+            game_total_times[pcid] = total + round(dur_min, 2)
 
+        
         if times[game_name] and times[game_name][-1]["Start"] == now:
             times[game_name][-1]["Tiempo"] = round(dur_min, 2)
         else:

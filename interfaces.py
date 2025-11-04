@@ -5,6 +5,7 @@ import threading
 import logging
 import time
 import sys
+import platform
 import datafiles
 import custommenus
 import ttkbootstrap as tb
@@ -544,6 +545,8 @@ class GamePlatformFrame(ttk.Frame):
         Loader.save_config()
 
     def create_direct_access(self, game_name, launcher_path, game_exe_path, destino_desktop=True):
+        if hasattr(self, "menu_popup") and self.menu_popup:
+            self.menu_popup.destroy()
         if sys.platform.startswith("win"):
             return self.create_direct_access_win(game_name, launcher_path, game_exe_path, destino_desktop)
         else:
@@ -565,15 +568,16 @@ class GamePlatformFrame(ttk.Frame):
             # fallback: si el archivo no existe o no tiene la variable
             return os.path.expanduser("~/Desktop")
         
+        platform = self.platform_name
         desktop_dir = get_linux_desktop_dir() if destino_desktop else os.getcwd()
         os.makedirs(desktop_dir, exist_ok=True)
         file_path = os.path.join(desktop_dir, f"{game_name}.desktop")
-        icon_path = game_exe_path if os.path.exists(game_exe_path) else "/usr/share/pixmaps/default.png"
+        icon_path = extract_icon(game_exe_path) if os.path.exists(game_exe_path) else "/usr/share/pixmaps/default.png"
 
         content = f"""[Desktop Entry]
         Name={game_name}
         Comment=Lanzador Cl69
-        Exec="{launcher_path}" --launch "{game_name}"
+        Exec="{launcher_path}" --launch "{game_name}" --platform "{platform}"
         Icon={icon_path}
         Terminal=false
         Type=Application
@@ -601,7 +605,71 @@ class GamePlatformFrame(ttk.Frame):
         acceso.IconLocation = game_exe_path  # Obtiene el ícono directamente del .exe del juego
         acceso.save()
 
+    def create_start_menu_shortcut(self, game_name, game_path, icon_path=None):
+        """
+    Crea un acceso directo al menú de inicio (Windows/Linux).
+    - game_name: nombre visible del juego
+    - game_path: ruta del ejecutable del juego
+    - icon_path: ícono opcional (ico/png)
+    """
+        if hasattr(self, "menu_popup") and self.menu_popup:
+            self.menu_popup.destroy()
+        system = platform.system()
+        platform = self.platform_name
+        
+        if system == "Windows":
+            try:
+                from win32com.client import Dispatch
+
+                # 📂 Menú inicio del usuario actual (no requiere admin)
+                start_menu = Path(os.getenv("APPDATA")) / "Microsoft" / "Windows" / "Start Menu" / "Programs"
+                shortcut_path = start_menu / f"{game_name}.lnk"
+
+                # 🔧 Crear el acceso directo
+                shell = Dispatch('WScript.Shell')
+                shortcut = shell.CreateShortcut(str(shortcut_path))
+                shortcut.TargetPath = sys.executable  # tu launcher
+                shortcut.Arguments = f'--launch "{game_name}" --platform "{platform}"'
+                shortcut.WorkingDirectory = str(Path(game_path).parent)
+                shortcut.IconLocation = str(icon_path if icon_path and Path(icon_path).exists() else sys.executable)
+                shortcut.save()
+
+                print(f"Acceso directo creado en el menú Inicio: {shortcut_path}")
+
+            except Exception as e:
+                print(f"Error al crear el acceso directo en Windows: {e}")
+
+        elif system == "Linux":
+            # Linux usa archivos .desktop en ~/.local/share/applications
+            desktop_entry_dir = Path.home() / ".local/share/applications"
+            desktop_entry_dir.mkdir(parents=True, exist_ok=True)
+
+            desktop_entry_path = desktop_entry_dir / f"{game_name.lower().replace(' ', '_')}.desktop"
+
+            # Determina el comando (el launcher con argumentos)
+            command = f'"{sys.executable}" "{Path(__file__).resolve()}" --launch "{game_name}" --platform "{platform}"'
+
+            icon_line = f"Icon={icon_path}\n" if icon_path and Path(icon_path).exists() else ""
+
+            desktop_entry_content = f"""[Desktop Entry]
+                Type=Application
+                Name={game_name}
+                Exec={command}
+                {icon_line}Terminal=false
+                Categories=Game;
+                StartupNotify=true
+                """
+
+            desktop_entry_path.write_text(desktop_entry_content)
+            os.chmod(desktop_entry_path, 0o755)
+            print(f"Archivo .desktop creado: {desktop_entry_path}")
+
+        else:
+            print("Sistema operativo no soportado para accesos directos al inicio.")
+
     def launch_game(self): # lanza el ejecutable seleccionado
+        if hasattr(self, "menu_popup") and self.menu_popup:
+            self.menu_popup.destroy()
         platform_name = self.platform_name
         game_tree = self.game_tree
         selected = game_tree.selection()
@@ -690,11 +758,15 @@ class GamePlatformFrame(ttk.Frame):
                 game_tree.insert(results_parent, "end", iid=game_name, text="", image=icon, values=(base_name,))
   
     def goto_folder(self, game_name):
+        if hasattr(self, "menu_popup") and self.menu_popup:
+            self.menu_popup.destroy()
         platform_name = self.platform_name
         path= os.path.dirname(datafiles.config[platform_name]["game_list"][game_name])
         os.startfile(path)
 
     def change_game_directory(self, game_name):
+        if hasattr(self, "menu_popup") and self.menu_popup:
+            self.menu_popup.destroy()
         try:
             exe = filedialog.askopenfilename(title="Selecciona un ejecutable")
 
@@ -713,6 +785,8 @@ class GamePlatformFrame(ttk.Frame):
             messagebox.showerror("Error", f"No se pudo guardar el nuevo ejecutable:\n{e}")
                 
     def toggle_favorite(self, game_name):
+        if hasattr(self, "menu_popup") and self.menu_popup:
+            self.menu_popup.destroy()
         platform_name = self.platform_name
         favorites = datafiles.config[platform_name].setdefault("favorites", [])
 
@@ -753,6 +827,7 @@ class GamePlatformFrame(ttk.Frame):
             menu.add_button("★ Favoritos", 25, "warning-outline", lambda: self.toggle_favorite(game_name))
             menu.add_button("⤓ Crear acceso directo", 25, "info-outline", lambda: self.create_direct_access(
                             game_name, os.path.abspath(sys.argv[0]), datafiles.config[platform_name]["game_list"][game_name], destino_desktop=True))
+            menu.add_button("📌 Añadir a inicio", 25, "info-outline", lambda: self.create_start_menu_shortcut(game_name, datafiles.config[platform_name]["game_list"][game_name], datafiles.ICONS))
             menu.add_button("📁 Archivos locales", 25, "info-outline", lambda: self.goto_folder(game_name))
             menu.add_button("📂 Cambiar directorio", 25, "info-outline", lambda: self.change_game_directory(game_name))
             menu.add_button("🗑 Eliminar juego", 25, "danger-outline", self.confirm_remove)

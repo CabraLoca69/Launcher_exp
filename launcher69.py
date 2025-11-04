@@ -14,8 +14,6 @@ def main():
         game_path = datafiles.config.get(platform_name, {}).get("game_list", {}).get(game_name)
         launcher_controler = GameLauncherController()
         if game_path:
-            if datafiles.config["global"].get("cloud_sync_enabled"):
-                cloudsync.call_merge()
             launcher_controler.launch_game(platform_name, game_name, game_path)
         else:
             print("No se encontró el juego.")

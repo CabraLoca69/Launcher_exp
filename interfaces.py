@@ -9,6 +9,7 @@ import datafiles
 import custommenus
 import ttkbootstrap as tb
 import tkinter as tk
+from pathlib import Path
 from machine_id import get_machine_id
 from googleapiclient.discovery import build
 from ttkbootstrap.toast import ToastNotification
@@ -549,9 +550,24 @@ class GamePlatformFrame(ttk.Frame):
             return self.create_direct_access_linux(game_name, launcher_path, game_exe_path, destino_desktop)
         
     def create_direct_access_linux(self, game_name, launcher_path, game_exe_path, destino_desktop=True):
-        desktop_dir = os.path.expanduser("~/Desktop") if destino_desktop else os.getcwd()
-        file_path = os.path.join(desktop_dir, f"{game_name}.desktop")
+        def get_linux_desktop_dir():
+            xdg_file = Path.home() / ".config" / "user-dirs.dirs"
 
+            if xdg_file.exists():
+                with open(xdg_file, encoding="utf-8") as f:
+                    for line in f:
+                        if line.startswith("XDG_DESKTOP_DIR"):
+                            path = line.split("=")[1].strip().replace('"', "")
+                            # reemplaza $HOME por la ruta real
+                            path = path.replace("$HOME", str(Path.home()))
+                            return os.path.expanduser(path)
+
+            # fallback: si el archivo no existe o no tiene la variable
+            return os.path.expanduser("~/Desktop")
+        
+        desktop_dir = get_linux_desktop_dir() if destino_desktop else os.getcwd()
+        os.makedirs(desktop_dir, exist_ok=True)
+        file_path = os.path.join(desktop_dir, f"{game_name}.desktop")
         icon_path = game_exe_path if os.path.exists(game_exe_path) else "/usr/share/pixmaps/default.png"
 
         content = f"""[Desktop Entry]
@@ -568,7 +584,7 @@ class GamePlatformFrame(ttk.Frame):
 
         # Dar permisos de ejecución al .desktop
         os.chmod(file_path, 0o755)
-        
+     
     def create_direct_access_win(self, game_name, launcher_path, game_exe_path, destino_desktop=True):
         platform = self.platform_name
         shell = win32com.client.Dispatch("WScript.Shell")

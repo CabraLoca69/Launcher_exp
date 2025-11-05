@@ -573,7 +573,20 @@ class GamePlatformFrame(ttk.Frame):
         desktop_dir = get_linux_desktop_dir() if destino_desktop else os.getcwd()
         os.makedirs(desktop_dir, exist_ok=True)
         file_path = os.path.join(desktop_dir, f"{game_name}.desktop")
-        icon_path = extract_icon(game_exe_path) if os.path.exists(game_exe_path) else "/usr/share/pixmaps/default.png"
+        
+        # Asegurar que el icono esté cacheado
+        if os.path.exists(game_exe_path):
+            try:
+                extract_icon(game_exe_path)  # fuerza caché
+            except Exception as e:
+                print(f"Error extrayendo icono: {e}")
+        
+        # Buscar en el caché si existe
+        cache_icon_path = datafiles.ICONS_CACHE_DIR / f"{Path(game_exe_path).stem}.png"
+        if cache_icon_path.exists():
+            icon_path = cache_icon_path
+        else:
+            icon_path = Path("/usr/share/pixmaps/default.png")
         
         icon_target_dir = Path.home() / ".local/share/icons"
         icon_target_dir.mkdir(parents=True, exist_ok=True)
@@ -656,11 +669,20 @@ class GamePlatformFrame(ttk.Frame):
 
             # Determina el comando (el launcher con argumentos)
             command = f'"{sys.executable}" "{Path(__file__).resolve()}" --launch "{game_name}" --platform "{platform_name}"'
-
+            
+            # Asegurar que el icono esté cacheado
             if os.path.exists(game_path):
-                icon_path = extract_icon(game_path)
+                try:
+                    extract_icon(game_path)  # fuerza caché
+                except Exception as e:
+                    print(f"Error extrayendo icono: {e}")
+
+            # Buscar en el caché si existe
+            cache_icon_path = datafiles.ICONS_CACHE_DIR / f"{Path(game_path).stem}.png"
+            if cache_icon_path.exists():
+                icon_path = cache_icon_path
             else:
-                icon_path = str(self.default_icon or "/usr/share/pixmaps/default.png")
+                icon_path = Path("/usr/share/pixmaps/default.png")
                 
             # Asegurar que el icono exista y esté en una ubicación estándar (~/.local/share/icons)
             icon_target_dir = Path.home() / ".local/share/icons"

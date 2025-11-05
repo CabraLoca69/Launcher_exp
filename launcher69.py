@@ -5,8 +5,6 @@ import cloudsync
 from interfaces import LauncherUI
 from helpers import GameLauncherController, clean_orphaned_sessions
 
-
-
 def main():
     if "--launch" in sys.argv and "--platform" in sys.argv:
         game_name = sys.argv[sys.argv.index("--launch") + 1]
@@ -28,12 +26,9 @@ def main():
         launcherui.set()
         datafiles.remove_temp_path()
         
-        
-
 if __name__ == "__main__":
     main()
 
-# se cuelga al iniciar sesion y rompe el autocloseframe que muestra esa interfaz
 # revisar boton de jugar desde favoritos
 # si abro un juego seguido del otro no cuenta las horas (Probarlo)
 # revisar cerrar el launcher con las notas abiertas no se guarda

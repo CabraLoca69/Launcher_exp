@@ -606,16 +606,10 @@ class GamePlatformFrame(ttk.Frame):
         acceso.save()
 
     def create_start_menu_shortcut(self, game_name, game_path, icon_path=None):
-        """
-    Crea un acceso directo al menú de inicio (Windows/Linux).
-    - game_name: nombre visible del juego
-    - game_path: ruta del ejecutable del juego
-    - icon_path: ícono opcional (ico/png)
-    """
         if hasattr(self, "menu_popup") and self.menu_popup:
             self.menu_popup.destroy()
         system = platform.system()
-        platform = self.platform_name
+        platform_name = self.platform_name
         
         if system == "Windows":
             try:
@@ -629,7 +623,7 @@ class GamePlatformFrame(ttk.Frame):
                 shell = Dispatch('WScript.Shell')
                 shortcut = shell.CreateShortcut(str(shortcut_path))
                 shortcut.TargetPath = sys.executable  # tu launcher
-                shortcut.Arguments = f'--launch "{game_name}" --platform "{platform}"'
+                shortcut.Arguments = f'--launch "{game_name}" --platform "{platform_name}"'
                 shortcut.WorkingDirectory = str(Path(game_path).parent)
                 shortcut.IconLocation = str(icon_path if icon_path and Path(icon_path).exists() else sys.executable)
                 shortcut.save()
@@ -647,9 +641,12 @@ class GamePlatformFrame(ttk.Frame):
             desktop_entry_path = desktop_entry_dir / f"{game_name.lower().replace(' ', '_')}.desktop"
 
             # Determina el comando (el launcher con argumentos)
-            command = f'"{sys.executable}" "{Path(__file__).resolve()}" --launch "{game_name}" --platform "{platform}"'
+            command = f'"{sys.executable}" "{Path(__file__).resolve()}" --launch "{game_name}" --platform "{platform_name}"'
 
-            icon_line = f"Icon={icon_path}\n" if icon_path and Path(icon_path).exists() else ""
+            if os.path.exists(game_path):
+                icon_path = extract_icon(game_path)
+            else:
+                icon_path = str(self.default_icon or "/usr/share/pixmaps/default.png")
 
             desktop_entry_content = f"""[Desktop Entry]
                 Type=Application

@@ -652,7 +652,7 @@ class GamePlatformFrame(ttk.Frame):
                 Type=Application
                 Name={game_name}
                 Exec={command}
-                {icon_line}Terminal=false
+                {icon_path}Terminal=false
                 Categories=Game;
                 StartupNotify=true
                 """

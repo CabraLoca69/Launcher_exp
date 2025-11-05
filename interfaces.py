@@ -8,6 +8,7 @@ import sys
 import platform
 import datafiles
 import custommenus
+import shutil
 import ttkbootstrap as tb
 import tkinter as tk
 from pathlib import Path
@@ -573,12 +574,25 @@ class GamePlatformFrame(ttk.Frame):
         os.makedirs(desktop_dir, exist_ok=True)
         file_path = os.path.join(desktop_dir, f"{game_name}.desktop")
         icon_path = extract_icon(game_exe_path) if os.path.exists(game_exe_path) else "/usr/share/pixmaps/default.png"
+        
+        icon_target_dir = Path.home() / ".local/share/icons"
+        icon_target_dir.mkdir(parents=True, exist_ok=True)
+        icon_target = icon_target_dir / f"{game_name.lower().replace(' ', '_')}.png"
+
+        try:
+            if os.path.exists(icon_path):
+                shutil.copy(icon_path, icon_target)
+            else:
+                icon_target = Path("/usr/share/pixmaps/default.png")
+        except Exception as e:
+            print(f"No se pudo copiar el icono: {e}")
+            icon_target = Path("/usr/share/pixmaps/default.png")
 
         content = f"""[Desktop Entry]
         Name={game_name}
         Comment=Lanzador Cl69
         Exec="{launcher_path}" --launch "{game_name}" --platform "{platform}"
-        Icon={icon_path}
+        Icon={icon_target}
         Terminal=false
         Type=Application
         """
@@ -647,12 +661,31 @@ class GamePlatformFrame(ttk.Frame):
                 icon_path = extract_icon(game_path)
             else:
                 icon_path = str(self.default_icon or "/usr/share/pixmaps/default.png")
+                
+            # Asegurar que el icono exista y esté en una ubicación estándar (~/.local/share/icons)
+            icon_target_dir = Path.home() / ".local/share/icons"
+            icon_target_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Nombre del icono estandarizado
+            icon_target = icon_target_dir / f"{game_name.lower().replace(' ', '_')}.png"
+            
+            try:
+                # Si el ícono existe, copiarlo al destino (y reemplazar si ya existe)
+                if os.path.exists(icon_path):
+                    shutil.copy(icon_path, icon_target)
+                else:
+                    # Fallback si no hay ícono
+                    icon_target = Path("/usr/share/pixmaps/default.png")
+            except Exception as e:
+                print(f"No se pudo copiar el icono: {e}")
+                icon_target = Path("/usr/share/pixmaps/default.png")
 
             desktop_entry_content = f"""[Desktop Entry]
                 Type=Application
                 Name={game_name}
                 Exec={command}
-                {icon_path}Terminal=false
+                Icon = {icon_target}
+                Terminal=false
                 Categories=Game;
                 StartupNotify=true
                 """
@@ -660,7 +693,7 @@ class GamePlatformFrame(ttk.Frame):
             desktop_entry_path.write_text(desktop_entry_content)
             os.chmod(desktop_entry_path, 0o755)
             print(f"Archivo .desktop creado: {desktop_entry_path}")
-
+            
         else:
             print("Sistema operativo no soportado para accesos directos al inicio.")
 

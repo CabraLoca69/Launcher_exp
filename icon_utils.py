@@ -48,6 +48,12 @@ def get_app_icon(path, size=(16,16), fallback_icon=None):
 # ---------------- Windows ---------------- #
 def _get_windows_icon(exe_path, size, fallback_icon):
     """Extrae el ícono principal de un .exe en Windows y lo convierte en PIL.Image"""
+    exe_name = os.path.basename(os.path.splitext(exe_path)[0])
+    ico_path = os.path.join(datafiles.ICONS_CACHE_DIR, f"{exe_name}.ico")
+
+    if os.path.exists(ico_path):
+        return Image.open(ico_path).resize(size, Image.LANCZOS)
+
     try:
         large, small = win32gui.ExtractIconEx(exe_path, 0)
         hicon = large[0] if large else (small[0] if small else None)
@@ -71,7 +77,8 @@ def _get_windows_icon(exe_path, size, fallback_icon):
                 (bmpinfo['bmWidth'], bmpinfo['bmHeight']),
                 bmpstr, 'raw', 'BGRA', 0, 1
             )
-
+            
+            image.save(ico_path, format="ICO", sizes= [size])
             # Liberar recursos
             hdc_mem.DeleteDC()
             hdc.DeleteDC()

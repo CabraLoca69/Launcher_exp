@@ -493,7 +493,6 @@ class GamePlatformFrame(ttk.Frame):
         self.details_frame.pack(fill="both", expand=True, padx=10, pady=10)
         self.show_favorites()
        
-        
         # Vincular búsqueda en vivo
         search_entry.bind("<KeyRelease>", lambda event: self.filter_games(event, self.search_var))
 
@@ -501,6 +500,7 @@ class GamePlatformFrame(ttk.Frame):
         self.game_tree.bind("<Double-Button-1>", lambda event: self.double_click_on_game_event(event))
         self.game_tree.bind("<Button-1>", lambda event: self.on_game_click(event))
         self.game_tree.bind("<Button-3>", lambda event: self.on_game_right_click(event))
+        self.game_tree.bind("<<TreeviewSelect>>", self.on_selection_change)
   
     def on_game_click(self, event):
         game_tree = self.game_tree
@@ -541,7 +541,20 @@ class GamePlatformFrame(ttk.Frame):
         else:
             game_tree.selection_remove(*game_tree.selection())
             self.show_menu(None, x , y, False)
-   
+
+    def on_delete_key(self, event):
+        self.confirm_remove()
+
+    def on_selection_change(self, event):
+        """Activa o desactiva el bind de Supr según haya selección o no."""
+        selection = self.game_tree.selection()
+        if selection:
+            # Si hay algo seleccionado → bindear Supr
+            self.bind_all("<Delete>", self.on_delete_key)
+        else:
+            # Si no hay nada → desbindear Supr
+            self.unbind_all("<Delete>")
+
     def save_config(self):
         Loader.save_config()
 
@@ -652,7 +665,7 @@ class GamePlatformFrame(ttk.Frame):
                 shortcut.TargetPath = sys.executable  # tu launcher
                 shortcut.Arguments = f'--launch "{game_name}" --platform "{platform_name}"'
                 shortcut.WorkingDirectory = str(Path(game_path).parent)
-                shortcut.IconLocation = str(icon_path if icon_path and Path(icon_path).exists() else sys.executable)
+                shortcut.IconLocation = game_path
                 shortcut.save()
 
                 print(f"Acceso directo creado en el menú Inicio: {shortcut_path}")

@@ -6,7 +6,6 @@ import logging
 import time
 import sys
 import platform
-import datafiles
 import custommenus
 import shutil
 import ttkbootstrap as tb
@@ -23,6 +22,7 @@ from helpers import Loader, GameLauncherController, extract_icon, reload_in_thre
 from icon_utils import set_window_icon, load_icon
 from cloudsync import get_drive_service
 from custommenus import ConfirmDialog
+from datafiles import DATA_DIR, ICONS_CACHE_DIR, ICONS, CONFIG_FILE, FLAG_FILE, db, notes_db
 
 if sys.platform.startswith("win"):
     import win32com.client
@@ -65,10 +65,10 @@ class LauncherUI:
         
         # Manager de sesiones
         self.session_manager = SessionManager(self.root, self)
-        if datafiles.config:
+        if CONFIG_FILE:
             reload_in_thread(self, self.start)
         
-        if datafiles.config.get("tab_order") is None:
+        if db.get("global.tab_order") is None:
             self.app.notebook.emptyframe()
         
         # Cuando termina de cargar, cerramos el splash
@@ -89,12 +89,12 @@ class LauncherUI:
     def monitor_sessions(self):
         def loop():
             while True:
-                if os.path.exists(datafiles.FLAG_FILE):
+                if os.path.exists(FLAG_FILE):
                     try:
-                        os.remove(datafiles.FLAG_FILE)  # Se procesa una sola vez
+                        os.remove(FLAG_FILE)  # Se procesa una sola vez
                         
                         # Releer config.json desde disco
-                        Loader.load_config()
+                        db.reload()
 
                         # Actualizar visualmente
                         self.restore_sessions()
@@ -104,7 +104,7 @@ class LauncherUI:
         threading.Thread(target=loop, daemon=True).start()
 
     def restore_sessions(self):
-        sessions = datafiles.config["global"].get("actual_sessions", {})
+        sessions = db.get("global.actual_sessions")
         for game_name, data in sessions.items():
             pid = data["pid"]
             start_time_str = data.get("start_time")
@@ -239,7 +239,7 @@ class MainLauncherFrame(tb.Frame):
         top_bar = tb.Frame(self, bootstyle="dark")
         top_bar.pack(fill="x")
 
-        email = (datafiles.config.get("global", {}).get("email") or "Desconocido")
+        email = (db.get("global.email", default= "Desconocido"))
 
         self.title_label = tb.Label(top_bar, text=f"Cuenta: {email}", font=("Segoe UI", 11, "bold"), bootstyle="inverse-dark")
         self.title_label.pack(side="left", padx=10, pady=5)
@@ -263,7 +263,7 @@ class MainLauncherFrame(tb.Frame):
         self.notebook.ask_platform_name()
 
     def update_title_label(self):
-        email = (datafiles.config.get("global", {}).get("email") or "Desconocido")
+        email = db.get("global.email", default= "Desconocido")
         self.title_label.config(text=f"Cuenta: {email}")
         
 class DraggableNotebook(tb.Notebook):
@@ -276,7 +276,7 @@ class DraggableNotebook(tb.Notebook):
         self.FAVORITE_LIMIT = 5
         self.platform_trees = {}
         self.loader = Loader()
-        self.default_icon= load_icon(os.path.join(datafiles.ICONS, "no_icon.ico"), size=(16,16))
+        self.default_icon= load_icon(os.path.join(ICONS, "no_icon.ico"), size=(16,16))
         self.service = None
                         
         # este frame se usa cuando no hay tabs (plataformas)
@@ -336,19 +336,15 @@ class DraggableNotebook(tb.Notebook):
 
     def save_tab_order(self):   
         order = [self.tab(i, "text") for i in range(self.index("end"))]
-        datafiles.config.setdefault("global", {})["tab_order"] = order
-        self.save_config()
+        db.set("global.tab_order", order)
 
     def on_tab_change(self, event):
         try:     
             selected_tab_text = self.tab(self.select(), "text")
-            datafiles.config["global"]["last_selected_tab"]= selected_tab_text
-            self.save_config()
+            db.set("global.last_selected_tab", selected_tab_text)
         except:
             pass
-            
-    def save_config(self):
-        Loader.save_config()
+
 
     def ask_platform_name(self):
         if hasattr(self, "menu_popup") and self.menu_popup:
@@ -367,20 +363,24 @@ class DraggableNotebook(tb.Notebook):
                                       
     def new_platform(self, platform_name):
         self.input_open = False
-        if platform_name: 
-            folder = self.loader.add_folder(platform_name)
-            if folder:
-                self.emptyframe()
-                
-                call_populate(platform_name, self)
-                datafiles.config.setdefault("global", {})["tab_order"] = [self.tab(i, "text") for i in range(self.index("end"))]
-                
-                self.save_config()
-                
-                for i in self.tabs():
-                    if self.tab(i, "text") == platform_name:
-                        self.select(i)
-                        break
+
+        if not platform_name:
+            return
+
+        folder = self.loader.add_folder(platform_name)
+        if not folder:
+            return
+
+        self.emptyframe()
+        call_populate(platform_name, self)
+
+        new_tab_order = [self.tab(i, "text") for i in range(self.index("end"))]
+        db.set(["global", "tab_order"], new_tab_order)
+
+        for i in self.tabs():
+            if self.tab(i, "text") == platform_name:
+                self.select(i)
+                break
     
     def call_populate(self, platform_name):
         all_data = []
@@ -397,7 +397,7 @@ class DraggableNotebook(tb.Notebook):
         if self._active is not None:
             platform_name= self.tab(self._active, option="text")
             if confirmed:
-                for game_name, game_path in datafiles.config[platform_name].get("game_list", {}).items():
+                for game_name, game_path in db.get([platform_name,"game_list"], default={}).items():
                     self.loader.remove_game_icon(game_path)
             
                 index_to_select = self._active - 1 if self._active > 0 else 0
@@ -410,12 +410,10 @@ class DraggableNotebook(tb.Notebook):
         if len(self.tabs()) == 0:
             self.empty_frame.pack(fill="both", expand=True)
         
-        datafiles.config.setdefault("global", {})["tab_order"] = [self.tab(i, "text") for i in range(self.index("end"))]
-        self.save_config()
+        db.ensure("global.tab_order", [self.tab(i, "text") for i in range(self.index("end"))])
     
     def remove_platform(self, platform_name): # trabaja en conjunto con remove_tab, esto es lo que borra la plataforma de la lista
-        del datafiles.config[platform_name]
-        self.save_config()
+        db.delete(platform_name)
 
     def show_menu(self, platform_name, x_root, y_root):
         self.menu_popup = custommenus.CustomPopupMenu(self)
@@ -458,7 +456,7 @@ class GamePlatformFrame(ttk.Frame):
         self.platform_name = platform_name
         self.menu = False
         self.loader = Loader()
-        self.img = Image.open(os.path.join(datafiles.ICONS, f"no_icon.ico")).resize((16, 16), Image.LANCZOS)
+        self.img = Image.open(os.path.join(ICONS, f"no_icon.ico")).resize((16, 16), Image.LANCZOS)
         self.default_icon= ImageTk.PhotoImage(self.img)   
         
         self.rowconfigure(0, weight=0)
@@ -555,9 +553,6 @@ class GamePlatformFrame(ttk.Frame):
             # Si no hay nada → desbindear Supr
             self.unbind_all("<Delete>")
 
-    def save_config(self):
-        Loader.save_config()
-
     def create_direct_access(self, game_name, launcher_path, game_exe_path, destino_desktop=True):
         if hasattr(self, "menu_popup") and self.menu_popup:
             self.menu_popup.destroy()
@@ -595,7 +590,7 @@ class GamePlatformFrame(ttk.Frame):
                 print(f"Error extrayendo icono: {e}")
         
         # Buscar en el caché si existe
-        cache_icon_path = datafiles.ICONS_CACHE_DIR / f"{Path(game_exe_path).stem}.png"
+        cache_icon_path = ICONS_CACHE_DIR / f"{Path(game_exe_path).stem}.png"
         if cache_icon_path.exists():
             icon_path = cache_icon_path
         else:
@@ -691,7 +686,7 @@ class GamePlatformFrame(ttk.Frame):
                     print(f"Error extrayendo icono: {e}")
 
             # Buscar en el caché si existe
-            cache_icon_path = datafiles.ICONS_CACHE_DIR / f"{Path(game_path).stem}.png"
+            cache_icon_path = ICONS_CACHE_DIR / f"{Path(game_path).stem}.png"
             if cache_icon_path.exists():
                 icon_path = cache_icon_path
             else:
@@ -742,7 +737,7 @@ class GamePlatformFrame(ttk.Frame):
         if selected:
             item_id = selected[0]
             game_name = game_tree.item(item_id, "values")[0]
-            game_path = datafiles.config[platform_name]["game_list"].get(game_name)
+            game_path = db.get([platform_name,"game_list", game_name])
             if game_path:
                 gamelaunch.launch_game(game_name, on_game_end=lambda: self.update_on_close(platform_name, game_name, item_id))
             else:
@@ -758,11 +753,9 @@ class GamePlatformFrame(ttk.Frame):
         if exe:
             exe_name = os.path.splitext(os.path.basename(exe))[0]
             
-            platform = datafiles.config.setdefault(platform_name, {})
-            game_list = platform.setdefault("game_list", {})
-            
-            game_list[exe_name] = exe
-            self.save_config()
+            db.ensure([platform_name, "game_list"], {})
+            db.set([platform_name, "game_list", exe_name], exe)
+
             call_populate(platform_name, self.game_tree)
     
     def confirm_remove(self):
@@ -778,23 +771,24 @@ class GamePlatformFrame(ttk.Frame):
             for item_id in selected_items:
                 game_name = game_tree.item(item_id, "values")[0]  # El texto del ítem (nombre del juego)
 
-                game_path = datafiles.config[platform_name]["game_list"].get(game_name)
+                game_path = db.get([platform_name, "game_list", game_name])
                 self.loader.remove_game_icon(game_path)
             
-                datafiles.config[platform_name]["game_list"].pop(game_name, None)
-                datafiles.config[platform_name].get("game_times", {}).pop(game_name, None)
-                datafiles.config[platform_name].get("game_total_times").pop(game_name, None)
-                if game_name in datafiles.config[platform_name].setdefault("favorites", []):
-                    datafiles.config[platform_name]["favorites"].remove(game_name)
+                db.delete([platform_name, "game_list", game_name])
+                db.delete([platform_name, "game_times", game_name])
+                db.delete([platform_name, "game_total_times", game_name])
+                favorites = db.get([platform_name, "favorites"], [])
+                if game_name in favorites.items():
+                    favorites.remove(game_name)
+                    db.set([platform_name, "favorites"], favorites)
                     
                 self.clean_info()
                 self.show_favorites()
                 game_tree.delete(item_id)
                     
-            self.save_config()
 
     def update_on_close(self, platform_name, game_name, item_id):
-        Loader.load_config()
+        db.reload()
         call_populate(platform_name, self.game_tree)
         self.show_game_details(game_name, item_id)
      
@@ -814,7 +808,7 @@ class GamePlatformFrame(ttk.Frame):
 
         results_parent = game_tree.insert("", "end", text="🔍 Resultados", open=True)
 
-        game_list = datafiles.config.get(platform_name, {}).get("game_list", {})
+        game_list = db.get([platform_name, "game_list"], default={})
         for game_name, game_path in game_list.items():
             if search_text in game_name.lower():
                 icon = extract_icon(game_path) or self.default_icon
@@ -826,7 +820,7 @@ class GamePlatformFrame(ttk.Frame):
         if hasattr(self, "menu_popup") and self.menu_popup:
             self.menu_popup.destroy()
         platform_name = self.platform_name
-        path= os.path.dirname(datafiles.config[platform_name]["game_list"][game_name])
+        path= os.path.dirname(db.get([platform_name, "game_list", game_name]))
         os.startfile(path)
 
     def change_game_directory(self, game_name):
@@ -839,12 +833,12 @@ class GamePlatformFrame(ttk.Frame):
                 return  # El usuario canceló el diálogo
 
             # Verificamos que la plataforma y el juego existan en config
-            if self.platform_name not in datafiles.config:
+            if self.platform_name not in CONFIG_FILE:
                 messagebox.showerror("Error", f"La plataforma '{self.platform_name}' no existe.")
                 return
 
-            datafiles.config[self.platform_name]["game_list"][game_name] = exe
-            self.save_config()    
+            db.set([self.platform_name, "game_list", game_name], exe)
+ 
         except Exception as e:
             logging.exception("Error al cambiar el directorio del juego")
             messagebox.showerror("Error", f"No se pudo guardar el nuevo ejecutable:\n{e}")
@@ -852,19 +846,24 @@ class GamePlatformFrame(ttk.Frame):
     def toggle_favorite(self, game_name):
         if hasattr(self, "menu_popup") and self.menu_popup:
             self.menu_popup.destroy()
+    
         platform_name = self.platform_name
-        favorites = datafiles.config[platform_name].setdefault("favorites", [])
+        favorites = db.ensure([platform_name, "favorites"], [])
 
         if game_name in favorites:
-            favorites.remove(game_name)
+            new_favs = [g for g in favorites if g != game_name]
+            db.set([platform_name, "favorites"], new_favs)
         else:
             if len(favorites) >= self.FAVORITE_LIMIT:
-                messagebox.showinfo("Límite alcanzado", f"Solo se permiten {self.FAVORITE_LIMIT} favoritos por plataforma.")
+                messagebox.showinfo(
+                    "Límite alcanzado", 
+                    f"Solo se permiten {self.FAVORITE_LIMIT} favoritos por plataforma."
+                )
                 return
-            favorites.append(game_name)
+            # Crear nueva lista con el juego agregado
+            new_favs = favorites + [game_name]
+            db.set([platform_name, "favorites"], new_favs)
             
-        self.save_config()
-
     def show_favorites(self):
         self.clean_info()
         details_panel = GameDetailsPanel(self.details_frame, self.platform_name, launcher_controller=self)
@@ -878,7 +877,7 @@ class GamePlatformFrame(ttk.Frame):
         details_panel.pack(fill="both", expand=True)
            
     def open_notes_window(self, game_name):
-        NotesWindow(self, game_name, datafiles.notas)
+        NotesWindow(self, game_name, notes_db)
 
     def show_menu(self, game_name, x_root , y_root, btn_props):
         platform_name = self.platform_name
@@ -891,8 +890,8 @@ class GamePlatformFrame(ttk.Frame):
             
             menu.add_button("★ Favoritos", 25, "warning-outline", lambda: self.toggle_favorite(game_name))
             menu.add_button("⤓ Crear acceso directo", 25, "info-outline", lambda: self.create_direct_access(
-                            game_name, os.path.abspath(sys.argv[0]), datafiles.config[platform_name]["game_list"][game_name], destino_desktop=True))
-            menu.add_button("📌 Añadir a inicio", 25, "info-outline", lambda: self.create_start_menu_shortcut(game_name, datafiles.config[platform_name]["game_list"][game_name], datafiles.ICONS))
+                            game_name, os.path.abspath(sys.argv[0]), db.get([platform_name, "game_list", game_name]), destino_desktop=True))
+            menu.add_button("📌 Añadir a inicio", 25, "info-outline", lambda: self.create_start_menu_shortcut(game_name, db.get([platform_name, "game_list", game_name], ICONS)))
             menu.add_button("📁 Archivos locales", 25, "info-outline", lambda: self.goto_folder(game_name))
             menu.add_button("📂 Cambiar directorio", 25, "info-outline", lambda: self.change_game_directory(game_name))
             menu.add_button("🗑 Eliminar juego", 25, "danger-outline", self.confirm_remove)
@@ -922,11 +921,11 @@ class GameDetailsPanel(tb.Frame):
         game_tree = self.launcher_controller.game_tree
         
         # Datos
-        times_for_pc = datafiles.config.get(self.platform_name, {}).get("game_total_times", {}).get(self.game_name, {})
+        times_for_pc = db.get([self.platform_name, "game_total_times", self.game_name], default = {})
         total_time = 0.0
         for pcids in times_for_pc:
             total_time = total_time + times_for_pc.get(pcids, 0.0)
-        sessions = list(reversed(datafiles.config.get(self.platform_name, {}).get("game_times", {}).get(self.game_name, [])))
+        sessions = list(reversed(db.get([self.platform_name, "game_times", self.game_name], default=[])))
 
         # === Barra superior ===
         top_bar = tb.Frame(self, padding=5)
@@ -978,8 +977,8 @@ class GameDetailsPanel(tb.Frame):
     def show_favorites(self):
         tk.Label(self, text="★ Tus Favoritos ★", font=("Arial", 14, "bold")).pack(pady=10)
 
-        favorites = datafiles.config.get(self.platform_name, {}).get("favorites", [])
-        game_list = datafiles.config.get(self.platform_name, {}).get("game_list", {})
+        favorites = db.get([self.platform_name, "favorites"], default= [])
+        game_list = db.get([self.platform_name, "game_list"], default= {})
 
         if not favorites:
             tk.Label(self, text="No tienes juegos favoritos aún.").pack(pady=20)
@@ -1049,7 +1048,7 @@ class NotesWindow(tb.Toplevel):
 
     def save_and_close(self):
         texto = self.text_area.get("1.0", "end").strip()
-        self.notes_dict[self.game_name] = texto
+        self.notes_dict.set(self.game_name, texto)
         self.open = False
         self.save_notes()
         self.destroy()
@@ -1060,8 +1059,7 @@ class NotesWindow(tb.Toplevel):
            self.after(300000, self.periodic_save)
         
     def save_notes(self):
-        with open(datafiles.NOTES_FILE, "w", encoding="utf-8") as f:
-            json.dump(self.notes_dict, f, ensure_ascii=False, indent=4)
+        notes_db.save()
 
 class PropertiesWindow(custommenus.AutoCloseFrame):
     def __init__(self, parent, platform_name, game_tree, on_update_callback=None, on_update_tab=None ):
@@ -1205,9 +1203,6 @@ class PropertiesWindow(custommenus.AutoCloseFrame):
         self.menu.add_button("➕ Agregar Directorio", 25, "secondary", command= self.btn_new_path)
         x, y = event.x_root, event.y_root
         self.menu.show(x, y)
-
-    def save_config(self):
-        Loader.save_config()
  
     def menu_closed(self, event):
         if event:
@@ -1215,11 +1210,9 @@ class PropertiesWindow(custommenus.AutoCloseFrame):
   
     def toggle_multiple_games(self):
         # Cambiar el valor de allow_multiple_games en el config
-        current_value = datafiles.config["global"].get("allow_multiple_games", False)
-        datafiles.config["global"]["allow_multiple_games"] = not current_value
+        current_value = db.get("global.allow_multiple_games", default= False)
+        db.set("global.allow_multiple_games", not current_value)
         
-        # Guardar el cambio
-        Loader.save_config()
     
     def btn_new_path(self):
         self.close_menu()
@@ -1251,24 +1244,26 @@ class PropertiesWindow(custommenus.AutoCloseFrame):
             self.warning_label_path.config(text="                                                              Nada que eliminar")
             self.warning_label_path.after(3000, lambda: self.warning_label_path.config(text=""))   
 
-    def remove_folder(self, confirmed): # elimina el directorio DE LA LISTA
+    def remove_folder(self, confirmed):  # elimina el directorio DE LA LISTA
         if confirmed:
             path_listbox = self.path_listbox
             selected = path_listbox.curselection()
             path = path_listbox.get(selected[0])
-    
-            for games, paths in datafiles.config[self.platform_name]["game_list"].copy().items():
-                if path in paths:
-                    del datafiles.config[self.platform_name]["game_list"][games]
-        
-            for platforms in datafiles.config[self.platform_name]["platform_folders"].copy():
-                if path == platforms:
-                    datafiles.config[self.platform_name]["platform_folders"].remove(path)
 
-        
+            # Eliminar juegos que estén dentro de esa carpeta
+            for game_name, game_path in db.get([self.platform_name, "game_list"], {}).copy().items():
+                if path in game_path:
+                    db.delete([self.platform_name, "game_list", game_name])
+
+            # Eliminar carpeta de la lista de platform_folders
+            folders = db.get([self.platform_name, "platform_folders"], [])
+            new_folders = [f for f in folders if f != path]
+            db.set([self.platform_name, "platform_folders"], new_folders)
+
+            # Actualizar UI
             path_listbox.delete(selected[0])
             self.update_game_list()
-            self.save_config()
+
 
     def close_menu(self):
         for widget in self.winfo_children():
@@ -1278,7 +1273,7 @@ class PropertiesWindow(custommenus.AutoCloseFrame):
     def update_directory_list(self): # recible el path_list y lo "actualiza"
         path_listbox = self.path_listbox
         path_listbox.delete(0, tk.END)
-        paths = datafiles.config[self.platform_name]["platform_folders"]
+        paths = db.get([self.platform_name, "platform_folders"], [])
         for path in paths:
             path_listbox.insert(tk.END, f"{path}")
 
@@ -1287,29 +1282,30 @@ class PropertiesWindow(custommenus.AutoCloseFrame):
             self.on_update_callback()
 
     def update_tab_name(self):
-        if self.on_update_tab :
-            if self.tab_name_var.get().strip():
-                try:
-                    new_name = self.tab_name_var.get().strip().capitalize()
-                except:
-                    new_name = self.tab_name_var.get().strip()
+        if self.on_update_tab:
+            new_name = self.tab_name_var.get().strip().capitalize()
+            if not new_name:
+                return
+
+            # Renombrar la clave de la plataforma
+            platform_data = db.get(self.platform_name, {})
+            db.delete(self.platform_name)
+            db.set(new_name, platform_data)
+
+            # Actualizar el orden de pestañas
+            tab_order = db.get("global.tab_order", [])
+            if self.platform_name in tab_order:
+                index = tab_order.index(self.platform_name)
+                tab_order[index] = new_name
+                db.set("global.tab_order", tab_order)
                 
-                if new_name:
-                    datafiles.config[new_name] = datafiles.config.pop(self.platform_name, {})
+                pre_name = self.platform_name
+                self.platform_name = new_name
+                self.warning_label.config(text="")  # Oculta la advertencia si está todo bien
                 
-                    try: 
-                        index = datafiles.config["global"]["tab_order"].index(self.platform_name) 
-                        datafiles.config["global"]["tab_order"][index] = new_name
-                    except:
-                        pass
-                
-                    pre_name = self.platform_name
-                    self.platform_name = new_name
-                    self.warning_label.config(text="")  # Oculta la advertencia si está todo bien
-                
-                    self.save_config()
-                    self.on_update_tab(new_name, pre_name)
-                    return
+                self.on_update_tab(new_name, pre_name)
+                return
+            
             else: 
                 self.warning_label.config(text="                                              No podés dejar el nombre vacío.")
                 self.warning_label.after(3000, lambda: self.warning_label.config(text=""))
@@ -1339,7 +1335,7 @@ class CloudSettingsWindow(custommenus.AutoCloseFrame):
         self.notebook.add(self.sync_tab, text="☁️ Sincronización")
 
         # Checkbox para sincronización automática
-        self.auto_sync_var = tk.BooleanVar(value=datafiles.config.get("global", {}).get("cloud_sync_enabled", False))
+        self.auto_sync_var = tk.BooleanVar(value=db.get("global.cloud_sync_enabled", default= False))
         chk_sync = tb.Checkbutton(self.sync_tab, text="Habilitar sincronización automática", variable=self.auto_sync_var, bootstyle="success", command=self.save_sync_setting)
         chk_sync.pack(pady=20, padx=20, anchor="w")
 
@@ -1354,14 +1350,14 @@ class CloudSettingsWindow(custommenus.AutoCloseFrame):
         
     # === Funciones de sincronización ===
     def save_sync_setting(self):
-        datafiles.config.setdefault("global", {})["cloud_sync_enabled"] = self.auto_sync_var.get()
-        if not datafiles.config["global"]["email"]:
+        db.set("global.cloud_sync_enabled", self.auto_sync_var.get())
+        if not CONFIG_FILE["global"]["email"]:
             self.recall_token(True)
             
     # === Funciones de cuenta ===
     def get_account_info(self):
-        if datafiles.config["global"]["email"]:
-            return datafiles.config["global"]["email"]
+        if CONFIG_FILE["global"]["email"]:
+            return db.get("global.email")
         return "desconocido"
 
     def change_account(self):
@@ -1375,10 +1371,10 @@ class CloudSettingsWindow(custommenus.AutoCloseFrame):
             
         def worker():
             if respond:
-                token_path = datafiles.DATA_DIR / "token.json"
+                token_path = DATA_DIR / "token.json"
 
-                if not datafiles.config["global"]["cloud_sync_enabled"]:
-                    datafiles.config.setdefault("global", {})["cloud_sync_enabled"] = True
+                if not CONFIG_FILE["global"]["cloud_sync_enabled"]:
+                    db.ensure("global.cloud_sync_enabled", True)
                     # actualizar variable de Tkinter desde el hilo principal
                     self.root.after(0, lambda: self.auto_sync_var.set(True))
                 
@@ -1392,8 +1388,7 @@ class CloudSettingsWindow(custommenus.AutoCloseFrame):
                 
                 self.service = service
                 self.parent.service = self.service
-                datafiles.config["global"]["email"] = self.get_user_email(creds)
-                Loader.save_config()
+                db.set("config.email", self.get_user_email(creds))
 
                 # actualizar label en el hilo principal
                 account_text = self.get_account_info()
@@ -1453,7 +1448,6 @@ def populate_ui(all_data, target, select_new= True):
     for pdata in all_data:
         platform_name = pdata["platform"]
         
-        
         # Caso 1: target es un Treeview directo
         if isinstance(target, ttk.Treeview):
             is_tree = True
@@ -1489,7 +1483,7 @@ def populate_ui(all_data, target, select_new= True):
             target.emptyframe()
         
         if not select_new:    
-            last_tab = datafiles.config["global"].get("last_selected_tab")
+            last_tab = db.get("global.last_selected_tab")
             if last_tab:
                 for tab_id in target.tabs():
                     if target.tab(tab_id, "text") == last_tab:

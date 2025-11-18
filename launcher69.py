@@ -9,7 +9,7 @@ def main():
     if "--launch" in sys.argv and "--platform" in sys.argv:
         game_name = sys.argv[sys.argv.index("--launch") + 1]
         platform_name = sys.argv[sys.argv.index("--platform") + 1]
-        game_path = datafiles.config.get(platform_name, {}).get("game_list", {}).get(game_name)
+        game_path = datafiles.db.get([platform_name, "game_list", game_name])
         launcher_controler = GameLauncherController()
         if game_path:
             launcher_controler.launch_game(game_name)
@@ -17,7 +17,7 @@ def main():
             print("No se encontró el juego.")
             
     else:
-        if datafiles.config["global"].get("cloud_sync_enabled"):
+        if datafiles.db.get("globa.cloud_sync_enabled"):
             cloudsync.call_merge()
 
         clean_orphaned_sessions()  
@@ -25,6 +25,7 @@ def main():
         launcher_controler = GameLauncherController()
         launcherui.set()
         datafiles.remove_temp_path()
+
         
 if __name__ == "__main__":
     main()

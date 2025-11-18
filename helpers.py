@@ -23,22 +23,20 @@ class Loader:
     
     def add_folder(self, platform_name):  # agrega un directorio a la lista 
         folder = safe_askdirectory()
-
-        # Crear la sección de la plataforma si no existe
-        if platform_name not in datafiles.config:
-            datafiles.config[platform_name] = {
-                "platform_folders": [folder],
-                "game_list": {},
-                "game_times": {},
-                "game_total_times": {}
-            }
-        else:
-            # Asegurarse de que 'platform_folders' exista
-            platform_data = datafiles.config[platform_name]
-            if "platform_folders" not in platform_data:
-                platform_data["platform_folders"] = []
-            if folder not in platform_data["platform_folders"]:
-                platform_data["platform_folders"].append(folder)
+        
+        # Asegura que exista la estructura base de la plataforma
+        datafiles.db.ensure(platform_name, {
+                    "platform_folders": [],
+                    "game_list": {},
+                    "favorites": [],
+                    "game_times": {},
+                    "game_total_times": {}
+                })
+        # Ahora agregamos la carpeta si no está
+        folders = datafiles.db.get([platform_name, "platform_folders"])
+        if folder not in folders:
+            folders.append(folder)
+            datafiles.db.set([platform_name, "platform_folders"], folders)
 
         self.scan_for_games(platform_name)
         return folder
@@ -51,9 +49,9 @@ class Loader:
             return os.path.isfile(path) and os.access(path, os.X_OK)
 
     def scan_for_games(self, platform_name):
-        ignore_keywords = ["vc_redist", "unins", "setup", "install", "dxsetup", "dotnet", "readme", "helper", "support", "launcher", "Launcher", "Win64"]
+        ignore_keywords = [kw.lower() for kw in["vc_redist", "unins", "setup", "install", "dxsetup", "dotnet", "readme", "helper", "support", "launcher", "Launcher", "Win64"]]
 
-        for path in datafiles.config[platform_name]["platform_folders"]:
+        for path in datafiles.db.get([platform_name, "platform_folders"]):
             for root, _, files in os.walk(path):
                 for file in files:
                     full_path = os.path.join(root, file)
@@ -61,9 +59,10 @@ class Loader:
                         continue
                     if any(keyword in file.lower() for keyword in ignore_keywords):
                         continue
-                    datafiles.config[platform_name]["game_list"][os.path.splitext(file)[0]] = full_path
-
-        self.save_config()
+                    key = os.path.splitext(file)[0]
+                    datafiles.db.set([platform_name, "game_list", key], full_path)
+        
+        
 
     def sort_key(self, game_name, game_times):
         sessions = game_times.get(game_name, [])
@@ -84,20 +83,6 @@ class Loader:
         if os.path.exists(icon_path):
             os.remove(icon_path)
             
-    @staticmethod
-    def load_config():
-        with datafiles.config_lock:
-            with open(datafiles.CONFIG_FILE, "r") as f:
-                loaded = json.load(f)
-            datafiles.config.clear()
-            datafiles.config.update(loaded)
-
-    @staticmethod
-    def save_config():
-        with datafiles.config_lock:
-            with open(datafiles.CONFIG_FILE, "w") as f:
-                json.dump(datafiles.config, f, indent=4)
-
 class GameLauncherController:
     _instance = None
     
@@ -156,16 +141,17 @@ class GameLauncherController:
 # Lógica principal
     def launch_game(self, game_name, on_game_end=None):
         def resolve_game(game_name):
-            for platform, data in datafiles.config.items():
-                if platform == "global":
-                    continue
-                if game_name in data["game_list"]:
-                    return platform, data["game_list"][game_name]
-            raise ValueError(f"Juego '{game_name}' no encontrado")
+            with datafiles.db.lock:
+                for platform, data in datafiles.db.data.items():
+                    if platform == "global":
+                        continue
+                    if game_name in data.get("game_list", {}):
+                        return platform, data["game_list"][game_name]
+                raise ValueError(f"Juego '{game_name}' no encontrado")
         
         def execute():
             with self.lock:
-                allow_multiple = datafiles.config["global"].get("allow_multiple_games", False)
+                allow_multiple = datafiles.db.get("global.allow_multiple_games") or False
                 if not allow_multiple and self.launched:
                     logging.info("Ya hay un juego en ejecución, no se puede iniciar otro.")
                     return
@@ -183,12 +169,11 @@ class GameLauncherController:
 
             # Guardar datos iniciales
             with self.lock:
-                datafiles.config["global"].setdefault("actual_sessions", {})[game_name] = {
+                datafiles.db.set(["global","actual_sessions", game_name],{
                     "pid": pid,
                     "start_time": start_dt.isoformat(),
-                }
-                datafiles.config["global"].setdefault("actual_running", {})[game_name] = {"pid": pid}
-                self.save_config()
+                }) 
+                datafiles.db.set(["global","actual_running", game_name], {"pid": pid})
 
             with open(datafiles.FLAG_FILE, "w") as f:
                 f.write("1")
@@ -202,7 +187,7 @@ class GameLauncherController:
                     time.sleep(300)
                     if not running:
                         break
-                    if datafiles.config["global"]["cloud_sync_enabled"]:
+                    if datafiles.db.get("global","cloud_sync_enabled"):
                         call_upload()
                     self._save_playtime(platform_name, game_name, start_time, now)
 
@@ -214,8 +199,8 @@ class GameLauncherController:
             finally:
                 with self.lock:
                     running = False
-                    datafiles.config["global"]["actual_running"].pop(game_name, None)
-                    datafiles.config["global"]["actual_sessions"].pop(game_name, None)
+                    datafiles.db.delete(["global", "actual_running", game_name])
+                    datafiles.db.delete(["global", "actual_sessions", game_name])
                     self._finalize_playtime(platform_name, game_name, start_time, now)
                     self.launched = False
                     if on_game_end:
@@ -228,55 +213,55 @@ class GameLauncherController:
     def _save_playtime(self, platform_name, game_name, start_time, now):
         dur_min = (time.time() - start_time) / 60
         with self.lock:
-            game_times = datafiles.config[platform_name].setdefault("game_times", {})
-            game_times.setdefault(game_name, [])
+            game_times = datafiles.db.get([platform_name, "game_times", game_name], default=[])
 
-            if game_times[game_name] and game_times[game_name][-1]["Start"] == now:
-                game_times[game_name][-1]["Tiempo"] = round(dur_min, 2)
+            if game_times and game_times[-1]["Start"] == now:
+                game_times[-1]["Tiempo"] = round(dur_min, 2)
             else:
-                game_times[game_name].append({"Start": now, "Tiempo": round(dur_min, 2)})
+                game_times.append({"Start": now, "Tiempo": round(dur_min, 2)})
 
-            game_times[game_name] = game_times[game_name][-5:]
+            game_times = game_times[game_name][-5:]
 
             pcid = get_machine_id()
-            game_total_times = datafiles.config[platform_name].setdefault("game_total_times", {}).setdefault(game_name, {})
-            total = game_total_times.setdefault(pcid, 0.0)
-            game_total_times[pcid] = total + 5
+            total_times = datafiles.db.get([platform_name, "game_total_times", game_name], default={})
+            if pcid not in total_times:
+                total_times[pcid] = 0
+
+            total_times[pcid] += round(dur_min, 2)
+            datafiles.db.set([platform_name, "game_total_times", game_name], total_times)
+            
             self.already_saved[game_name] = True
-            self.save_config()
 
     def _finalize_playtime(self, platform_name, game_name, start_time, now):
         pcid = get_machine_id()
         dur_min = (time.time() - start_time) / 60
         
-        game_total_times = datafiles.config[platform_name].setdefault("game_total_times", {}).setdefault(game_name, {})
-        total= game_total_times.setdefault(pcid, 0.0)
+        total_times = datafiles.db.get([platform_name, "game_total_times", game_name], default={})
+        total_for_pcid = total_times.get(pcid, 0.0)
         
-        times = datafiles.config[platform_name].setdefault("game_times", {})
-        times.setdefault(game_name, [])
+        game_times = datafiles.db.get([platform_name, "game_times", game_name], default=[])
 
         if self.already_saved.get(game_name, False):
-            dif = dur_min - times[game_name][-1]["Tiempo"]
-            if dif > 0:
-                game_total_times[pcid] = total + round(dif, 2)
+            last_time = game_times[-1]["Tiempo"] if game_times else 0
+            diff = dur_min - last_time
+            if diff > 0:
+                total_times[pcid] = round(total_for_pcid + diff, 2)
         else:
-            game_total_times[pcid] = total + round(dur_min, 2)
-
+            total_times[pcid] = round(total_for_pcid + dur_min, 2)
         
-        if times[game_name] and times[game_name][-1]["Start"] == now:
-            times[game_name][-1]["Tiempo"] = round(dur_min, 2)
-        else:
-            times[game_name].append({"Start": now, "Tiempo": round(dur_min, 2)})
+        datafiles.db.set([platform_name, "game_total_times", game_name], total_times)
 
-        times[game_name] = times[game_name][-5:]
+        if game_times and game_times[-1]["Start"] == now:
+            game_times[-1]["Tiempo"] = round(dur_min, 2)
+        else:
+            game_times.append({"Start": now, "Tiempo": round(dur_min, 2)})
+
+        game_times = game_times[-5:]
+        datafiles.db.set([platform_name, "game_times", game_name], game_times)
         self.already_saved.pop(game_name, None)
-        self.save_config()
-        if datafiles.config["global"]["cloud_sync_enabled"]:
+        if datafiles.db.get("global.cloud_sync_enabled", default=False):
             time.sleep(2)
             call_upload()
-
-    def save_config(self):
-        Loader.save_config()
 
 def safe_askdirectory():
     try:
@@ -294,27 +279,28 @@ def safe_askdirectory():
             raise
 
 def clean_orphaned_sessions():
-    actual_running = datafiles.config["global"].get("actual_running", {})
+    actual_running = datafiles.db.get("global.actual_running", default={})
     to_remove = []
 
-    # Si hay algo registrado como corriendo, verificar si realmente lo está
     for game_name, info in actual_running.items():
         pid = info.get("pid")
         if not is_process_running(pid):
             to_remove.append(game_name)
 
     for game_name in to_remove:
-        datafiles.config["global"]["actual_sessions"].pop(game_name, None)
-        actual_running.pop(game_name, None)
+        datafiles.db.delete(f"global.actual_sessions.{game_name}")
+        datafiles.db.delete(f"global.actual_running.{game_name}")
 
-    # Si actual_running quedó vacío, borrar actual_sessions completamente
-    if not actual_running:
-        datafiles.config["global"].pop("actual_sessions", None)
+    # Si actual_running quedó vacío → borrar toda la rama
+    if not datafiles.db.get("global.actual_running", {}):
+        datafiles.db.delete("global.actual_running")
 
-    if to_remove or not actual_running:
-        datafiles.config["global"].setdefault("actual_sessions", {})
-        datafiles.config["global"].setdefault("actual_running", {})
-        Loader.save_config()
+    # Si actual_sessions quedó vacío → borrar toda la rama
+    if not datafiles.db.get("global.actual_sessions", {}):
+        datafiles.db.delete("global.actual_sessions")
+
+    datafiles.db.ensure("global.actual_running", {})
+    datafiles.db.ensure("global.actual_sessions", {})
 
 def is_process_running(pid):
     try:
@@ -328,19 +314,21 @@ def extract_icon(path):
 def reload_in_thread(self, on_callback):
     def worker():
         all_data = []
-        for platform_name in datafiles.config.get("global", {}).get("tab_order", []):
-            if platform_name in datafiles.config:
+
+        tab_order = datafiles.db.get("global.tab_order", [])        
+
+        for platform_name in tab_order:
+            if datafiles.db.get(platform_name, None) is not None:
                 all_data.append(collect_platform_data(platform_name))
-                                
-        # ya tenemos todo, ahora actualizar UI en mainloop
+
         self.root.after(0, lambda: on_callback(all_data))
 
     threading.Thread(target=worker, daemon=True).start()
 
 def collect_platform_data(platform_name):
     grouped = True
-    default_icon= load_icon(os.path.join(datafiles.ICONS, "no_icon.ico"), size=(16,16))
-    """Prepara datos de una plataforma (sin tocar widgets)."""
+    default_icon = load_icon(os.path.join(datafiles.ICONS, "no_icon.ico"), size=(16,16))
+
     result = {
         "platform": platform_name,
         "games": [],
@@ -349,15 +337,18 @@ def collect_platform_data(platform_name):
         "recent": [],
         "by_month": {}
     }
+
     loader = Loader()
-    game_list = datafiles.config[platform_name]["game_list"]
-    game_times = datafiles.config[platform_name].get("game_times", {})
-    favorites = datafiles.config[platform_name].get("favorites", [])
+
+    game_list   = datafiles.db.get([platform_name, "game_list"], {})
+    game_times  = datafiles.db.get([platform_name, "game_times"], {})
+    favorites   = datafiles.db.get([platform_name, "favorites"], [])
 
     if grouped:
         for name, path in sorted(game_list.items(), key=lambda item: loader.sort_key(item[0], game_times)):
             game_info = {"name": name, "path": path, "icon": extract_icon(path) or default_icon}
             result["grouped"].append(game_info)
+
     return result
                 
     """for name, path in game_list.items():

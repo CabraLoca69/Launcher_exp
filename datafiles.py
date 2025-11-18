@@ -3,6 +3,7 @@ import sys
 import json
 import threading
 from pathlib import Path
+from jsondb import JsonDatabase
 
 # ------------------------------
 # Directorios de datos
@@ -48,6 +49,17 @@ config_lock = threading.Lock()
 # ------------------------------
 # Cargar configuración y notas
 # ------------------------------
+db = JsonDatabase(CONFIG_FILE)
+notes_db = JsonDatabase(NOTES_FILE)
+
+db.ensure("global.cloud_sync_enabled", False)
+db.ensure("global.email", None)
+db.ensure("global.allow_multiple_games", False)
+db.ensure("global.tab_order", [])
+db.ensure("global.last_selected_tab", None)
+db.ensure("global.actual_sessions", {})
+db.ensure("global.actual_running", {})
+
 try:
     with open(CONFIG_FILE, "r", encoding="utf-8") as f:
         config = json.load(f)
@@ -60,10 +72,8 @@ if NOTES_FILE.exists():
 else:
     notas = {}
 
-# Inicialización de claves globales por defecto
-config.setdefault("global", {}).setdefault("cloud_sync_enabled", False)
-config.setdefault("global", {}).setdefault("email", None)
-config.setdefault("global", {}).setdefault("allow_multiple_games", False)
+
+
 
 def remove_temp_path():
     try:

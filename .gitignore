@@ -1,22 +1,10 @@
 dist/
-<<<<<<< HEAD
 data/icons_cache
 data/config.json
-=======
-data/
-.vs/
->>>>>>> on_tests
 __pycache__
 pruebas.py 
 *.bat
 *.txt
 *.spec
-<<<<<<< HEAD
 *.json
 *.log
-=======
-*.log
-*.json
-steamintegration.py
-pruebas.py
->>>>>>> on_tests

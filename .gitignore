@@ -1,10 +1,11 @@
 dist/
 data/icons_cache
-.vs/
+data/config.json
+data/machine_id.txt
 __pycache__
+pruebas.py 
+*.bat
 *.txt
 *.spec
-*.log
 *.json
-steamintegration.py
-pruebas.py
+*.log

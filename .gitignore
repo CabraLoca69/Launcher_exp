@@ -1,6 +1,7 @@
 dist/
 data/icons_cache
 data/config.json
+data/machine_id.txt
 __pycache__
 pruebas.py 
 *.bat

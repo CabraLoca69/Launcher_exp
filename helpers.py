@@ -154,7 +154,15 @@ class GameLauncherController:
             raise NotImplementedError(f"SO no soportado: {sys.platform}")
 
 # Lógica principal
-    def launch_game(self, platform_name, game_name, game_path, on_game_end=None):
+    def launch_game(self, game_name, on_game_end=None):
+        def resolve_game(game_name):
+            for platform, data in datafiles.config.items():
+                if platform == "global":
+                    continue
+                if game_name in data["game_list"]:
+                    return platform, data["game_list"][game_name]
+            raise ValueError(f"Juego '{game_name}' no encontrado")
+        
         def execute():
             with self.lock:
                 allow_multiple = datafiles.config["global"].get("allow_multiple_games", False)
@@ -164,6 +172,7 @@ class GameLauncherController:
                 self.launched = True
 
             clean_orphaned_sessions()
+            platform_name, game_path = resolve_game(game_name)
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             start_time = time.time()
             start_dt = datetime.now()

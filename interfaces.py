@@ -744,7 +744,7 @@ class GamePlatformFrame(ttk.Frame):
             game_name = game_tree.item(item_id, "values")[0]
             game_path = datafiles.config[platform_name]["game_list"].get(game_name)
             if game_path:
-                gamelaunch.launch_game(platform_name, game_name, game_path, on_game_end=lambda: self.update_on_close(platform_name, game_name, item_id))
+                gamelaunch.launch_game(game_name, on_game_end=lambda: self.update_on_close(platform_name, game_name, item_id))
             else:
                 messagebox.showwarning("Atención", "No se pudo encontrar el juego")
         else:
@@ -913,7 +913,7 @@ class GameDetailsPanel(tb.Frame):
         self.platform_name = platform_name
         self.game_name = game_name
         self.item_id = item_id
-        self.launcher_controller = launcher_controller
+        self.launcher_controller = launcher_controller #esto es una instancia de GamePlatformFrame, concretamente el "padre" (el que la crea)
         
         self.icon = None
     
@@ -934,7 +934,7 @@ class GameDetailsPanel(tb.Frame):
 
         # Botón "Jugar"
         tb.Button(top_bar, text="▶ Jugar", bootstyle="success-outline", width=12,
-                  command=self.launch_game).pack(side="left", padx=5, pady=5)
+                  command=lambda : self.launch_game(self.game_name)).pack(side="left", padx=5, pady=5)
 
         # Ícono + nombre
         self.icon = game_tree.item(self.item_id, "image")
@@ -1001,15 +1001,15 @@ class GameDetailsPanel(tb.Frame):
 
                     # Botón rápido de jugar
                     tb.Button(frame, text="▶", width=3, bootstyle="success-outline",
-                            command=self.launch_game).pack(side="right")
+                            command= lambda: self.launch_game(game_name)).pack(side="right")
                     
     def clean_info(self):
         for widget in self.winfo_children():
             widget.destroy()
 
-    def launch_game(self):
-        self.launcher_controller.launch_game()
-
+    def launch_game(self, game_name):
+        GameLauncherController().launch_game(game_name)
+        
     def toggle_favorite(self):
         self.launcher_controller.toggle_favorite(self.game_name)
 

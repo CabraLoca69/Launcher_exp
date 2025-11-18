@@ -1,5 +1,5 @@
 dist/
-data/
+data/icons_cache
 .vs/
 __pycache__
 *.txt

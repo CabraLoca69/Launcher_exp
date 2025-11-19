@@ -1,4 +1,3 @@
-
 import sys
 from cloudsync import call_merge
 from interfaces import LauncherUI
@@ -20,7 +19,6 @@ def main():
         if db.get("global.cloud_sync_enabled"):
             call_merge()
 
-        clean_orphaned_sessions()  
         launcherui = LauncherUI() 
         launcher_controler = GameLauncherController()
         launcherui.set()

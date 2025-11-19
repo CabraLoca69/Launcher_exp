@@ -17,7 +17,7 @@ from googleapiclient.discovery import build
 from icon_utils import load_icon
 from custommenus import ConfirmDialog
 from cloudsync import get_drive_service
-from helpers import Loader, GameLauncherController, extract_icon, reload_in_thread, collect_platform_data
+from helpers import Loader, GameLauncherController, extract_icon, reload_in_thread, collect_platform_data, clean_orphaned_sessions
 from datafiles import DATA_DIR, ICONS_CACHE_DIR, ICONS, CONFIG_FILE, FLAG_FILE, db, notes_db
 
 if sys.platform.startswith("win"):
@@ -71,6 +71,7 @@ class LauncherUI:
         self.splash.close()
         
     def set(self):
+        clean_orphaned_sessions()
         self.root.after(300, self.init_ui)        
         self.root.mainloop()        
     

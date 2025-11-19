@@ -3,9 +3,8 @@ data/icons_cache
 data/config.json
 data/machine_id.txt
 __pycache__
-pruebas.py 
+upload_err.txt
 *.bat
-*.txt
 *.spec
 *.json
 *.log

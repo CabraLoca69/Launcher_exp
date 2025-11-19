@@ -28,6 +28,10 @@ def main():
 
         
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("Launcher finalizado por interrupción de VS Code.")
 
 # revisar cerrar el launcher con las notas abiertas no se guarda
+# revisar buscador

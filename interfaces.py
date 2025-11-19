@@ -782,11 +782,10 @@ class GamePlatformFrame(ttk.Frame):
                 self.show_favorites()
                 game_tree.delete(item_id)
                     
-
     def update_on_close(self, platform_name, game_name, item_id):
         db.reload()
-        call_populate(platform_name, self.game_tree)
         self.show_game_details(game_name, item_id)
+        call_populate(platform_name, self.game_tree)
      
     def filter_games(self, event, search_var):
         platform_name = self.platform_name
@@ -802,7 +801,7 @@ class GamePlatformFrame(ttk.Frame):
             call_populate(platform_name, game_tree)  # agrupado
             return
 
-        results_parent = game_tree.insert("", "end", text="🔍 Resultados", open=True)
+        #results_parent = game_tree.insert("", "end", text="🔍 Resultados", open=True)
 
         game_list = db.get([platform_name, "game_list"], default={})
         for game_name, game_path in game_list.items():
@@ -810,8 +809,8 @@ class GamePlatformFrame(ttk.Frame):
                 icon = extract_icon(game_path) or self.default_icon
                 game_tree.icon_images[game_name] = icon
                 base_name = os.path.splitext(game_name)[0]
-                game_tree.insert(results_parent, "end", iid=game_name, text="", image=icon, values=(base_name,))
-  
+                game_tree.insert("", "end", iid=game_name, text="", image=icon, values=(base_name,))
+                 
     def goto_folder(self, game_name):
         if hasattr(self, "menu_popup") and self.menu_popup:
             self.menu_popup.destroy()

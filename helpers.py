@@ -202,7 +202,8 @@ class GameLauncherController:
                         on_game_end()
 
         thread = threading.Thread(target=execute)
-        thread.start()
+        if db.get(["global", "actual_running", game_name]) is None:
+            thread.start()
 
 # Helpers de guardado de tiempos
     def _save_playtime(self, platform_name, game_name, start_time, now):

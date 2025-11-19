@@ -18,7 +18,11 @@ class JsonDatabase:
     # ---------------- RAW IO ----------------
     def _load_raw(self):
         with open(self.file_path, "r", encoding="utf-8") as f:
-            self.data = json.load(f)
+            loaded = json.load(f)
+
+        # Mantener la misma referencia para que la UI se actualice
+        self.data.clear()
+        self.data.update(loaded)
 
     def _save_raw(self, data):
         with open(self.file_path, "w", encoding="utf-8") as f:

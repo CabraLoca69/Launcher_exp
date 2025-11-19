@@ -1,5 +1,4 @@
 import os
-import json
 import psutil
 import threading
 import logging
@@ -11,17 +10,14 @@ import shutil
 import ttkbootstrap as tb
 import tkinter as tk
 from pathlib import Path
-from machine_id import get_machine_id
-from googleapiclient.discovery import build
-from ttkbootstrap.toast import ToastNotification
-from ttkbootstrap.dialogs import Messagebox
 from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageTk
-from helpers import Loader, GameLauncherController, extract_icon, reload_in_thread, collect_platform_data
-from icon_utils import set_window_icon, load_icon
-from cloudsync import get_drive_service
+from googleapiclient.discovery import build
+from icon_utils import load_icon
 from custommenus import ConfirmDialog
+from cloudsync import get_drive_service
+from helpers import Loader, GameLauncherController, extract_icon, reload_in_thread, collect_platform_data
 from datafiles import DATA_DIR, ICONS_CACHE_DIR, ICONS, CONFIG_FILE, FLAG_FILE, db, notes_db
 
 if sys.platform.startswith("win"):
@@ -778,7 +774,7 @@ class GamePlatformFrame(ttk.Frame):
                 db.delete([platform_name, "game_times", game_name])
                 db.delete([platform_name, "game_total_times", game_name])
                 favorites = db.get([platform_name, "favorites"], [])
-                if game_name in favorites.items():
+                if game_name in favorites:
                     favorites.remove(game_name)
                     db.set([platform_name, "favorites"], favorites)
                     
@@ -833,7 +829,7 @@ class GamePlatformFrame(ttk.Frame):
                 return  # El usuario canceló el diálogo
 
             # Verificamos que la plataforma y el juego existan en config
-            if self.platform_name not in CONFIG_FILE:
+            if not db.get(self.platform_name):
                 messagebox.showerror("Error", f"La plataforma '{self.platform_name}' no existe.")
                 return
 
@@ -1351,14 +1347,13 @@ class CloudSettingsWindow(custommenus.AutoCloseFrame):
     # === Funciones de sincronización ===
     def save_sync_setting(self):
         db.set("global.cloud_sync_enabled", self.auto_sync_var.get())
-        if not CONFIG_FILE["global"]["email"]:
+        if not db.get("global.email"):
             self.recall_token(True)
             
     # === Funciones de cuenta ===
     def get_account_info(self):
-        if CONFIG_FILE["global"]["email"]:
-            return db.get("global.email")
-        return "desconocido"
+        return db.get("global.email", default= "Desconocido") or "Desconocido"
+
 
     def change_account(self):
         ConfirmDialog(self, title="Deberas volver a iniciar sesion", message= "¿Estas seguro?", callback=self.recall_token).place(relx=0.5, rely=0.5, anchor="center")
@@ -1373,10 +1368,10 @@ class CloudSettingsWindow(custommenus.AutoCloseFrame):
             if respond:
                 token_path = DATA_DIR / "token.json"
 
-                if not CONFIG_FILE["global"]["cloud_sync_enabled"]:
+                if not db.get("global.cloud_sync_enabled"):
                     db.ensure("global.cloud_sync_enabled", True)
                     # actualizar variable de Tkinter desde el hilo principal
-                    self.root.after(0, lambda: self.auto_sync_var.set(True))
+                    self.parent.after(0, lambda: self.auto_sync_var.set(True))
                 
                 if token_path.exists():
                     token_path.unlink()
@@ -1388,11 +1383,7 @@ class CloudSettingsWindow(custommenus.AutoCloseFrame):
                 
                 self.service = service
                 self.parent.service = self.service
-                db.set("config.email", self.get_user_email(creds))
-
-                # actualizar label en el hilo principal
-                account_text = self.get_account_info()
-                self.root.after(0, lambda: self.account_label.config(text=account_text))
+                db.set("global.email", self.get_user_email(creds))
 
         threading.Thread(target=worker, daemon=True).start()
             

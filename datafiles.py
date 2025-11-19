@@ -1,7 +1,5 @@
 import os
 import sys
-import json
-import threading
 from pathlib import Path
 from jsondb import JsonDatabase
 
@@ -42,11 +40,6 @@ BACKUP_FILE_NAME = "playtime_backup.json"
 TEMP_PATH = DATA_DIR / BACKUP_FILE_NAME
 
 # ------------------------------
-# Lock global para operaciones de config
-# ------------------------------
-config_lock = threading.Lock()
-
-# ------------------------------
 # Cargar configuración y notas
 # ------------------------------
 db = JsonDatabase(CONFIG_FILE)
@@ -60,24 +53,9 @@ db.ensure("global.last_selected_tab", None)
 db.ensure("global.actual_sessions", {})
 db.ensure("global.actual_running", {})
 
-try:
-    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-        config = json.load(f)
-except (FileNotFoundError, json.JSONDecodeError):
-    config = {}
-
-if NOTES_FILE.exists():
-    with open(NOTES_FILE, "r", encoding="utf-8") as f:
-        notas = json.load(f)
-else:
-    notas = {}
-
-
-
-
 def remove_temp_path():
     try:
         os.remove(TEMP_PATH)
     except:
-        print(f"⚠ No se pudo borrar")
+        print(f"⚠ No se pudo borrar", Exception)
 

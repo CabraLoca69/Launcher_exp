@@ -1,6 +1,3 @@
-import os
-import psutil
-import re
 import ttkbootstrap as tb
 from tkinter import StringVar
 

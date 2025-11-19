@@ -102,3 +102,8 @@ class JsonDatabase:
                 ref[final] = default
                 self.save()
             return ref[final]
+
+    # ---------- COPIA COMPLETA ----------   
+    def get_all(self) -> dict:
+        with self.lock:
+            return self.data.copy()

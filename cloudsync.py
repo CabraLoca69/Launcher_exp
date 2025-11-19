@@ -2,12 +2,10 @@ import os
 import json
 import urllib.request
 import threading
-import time
 from machine_id import get_machine_id
-from io import BytesIO, TextIOWrapper 
-from pathlib import Path
+from io import BytesIO
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
-from datafiles import DATA_DIR, TOKEN_PATH, CREDENTIALS_PATH, BACKUP_FILE_NAME, DRIVE_FOLDER_NAME, CONFIG_FILE,TEMP_PATH, config, config_lock 
+from datafiles import TOKEN_PATH, CREDENTIALS_PATH, BACKUP_FILE_NAME, DRIVE_FOLDER_NAME, TEMP_PATH, db
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -114,7 +112,7 @@ def build_cloud_payload_for_upload(existing_data=None):
 
     # Reemplazamos solo la sección de esta PC
     local_data = {}
-    for platform, pdata in config.items():
+    for platform, pdata in db.get_all().items():
         if platform == "global":
             continue
         for game, times_by_pc in pdata["game_total_times"].items():
@@ -123,24 +121,18 @@ def build_cloud_payload_for_upload(existing_data=None):
     cloud_data["pc_ids"][pc_id] = local_data
     return cloud_data
 
-def download_and_merge_backup(local_config_path):
+def download_and_merge_backup():
     local_config = {}
-    with config_lock:
-        if Path(local_config_path).exists():
-            with open(local_config_path, "r", encoding="utf-8") as f:
-                local_config = json.load(f)
-
+    local_config = db.get_all()
+    
     cloud_data = call_download()
     if not cloud_data:
         return local_config
 
     merged_config = merge_backup_data(local_config, cloud_data)
 
-    with config_lock:
-        with open(local_config_path, "w", encoding="utf-8") as f:
-            json.dump(merged_config, f, indent=4)
-    config.clear()
-    config.update(merged_config)
+    db.data = merged_config
+    db.save()
     
     return merged_config
 
@@ -176,7 +168,7 @@ def call_merge():
     def worker():
         if not has_internet_http():
             return
-        download_and_merge_backup(CONFIG_FILE)
+        download_and_merge_backup()
     threading.Thread(target=worker, daemon=True).start()
     
 def call_upload():

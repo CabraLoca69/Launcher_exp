@@ -5,6 +5,7 @@ import threading
 import psutil
 import time
 import sys
+from safe_threading import safe_thread
 from datetime import datetime
 from tkinter import filedialog
 from machine_id import get_machine_id
@@ -182,12 +183,10 @@ class GameLauncherController:
                     time.sleep(300)
                     if not running:
                         break
-                    if db.get("global","cloud_sync_enabled"):
-                        call_upload()
+
                     self._save_playtime(platform_name, game_name, start_time, now)
 
-            save_thread = threading.Thread(target=periodic_saver, daemon=True)
-            save_thread.start()
+            safe_thread(periodic_saver)
 
             try:
                 process.wait()
@@ -201,9 +200,8 @@ class GameLauncherController:
                     if on_game_end:
                         on_game_end()
 
-        thread = threading.Thread(target=execute)
         if db.get(["global", "actual_running", game_name]) is None:
-            thread.start()
+            safe_thread(execute)
 
 # Helpers de guardado de tiempos
     def _save_playtime(self, platform_name, game_name, start_time, now):
@@ -216,7 +214,8 @@ class GameLauncherController:
             else:
                 game_times.append({"Start": now, "Tiempo": round(dur_min, 2)})
 
-            game_times = game_times[game_name][-5:]
+            game_times = game_times[-5:]
+            db.set([platform_name, "game_times", game_name], game_times)
 
             pcid = get_machine_id()
             total_times = db.get([platform_name, "game_total_times", game_name], default={})
@@ -227,6 +226,9 @@ class GameLauncherController:
             db.set([platform_name, "game_total_times", game_name], total_times)
             
             self.already_saved[game_name] = True
+            if db.get("global.cloud_sync_enabled", default=False):
+                time.sleep(2)
+                call_upload()
 
     def _finalize_playtime(self, platform_name, game_name, start_time, now):
         pcid = get_machine_id()
@@ -255,6 +257,7 @@ class GameLauncherController:
         game_times = game_times[-5:]
         db.set([platform_name, "game_times", game_name], game_times)
         self.already_saved.pop(game_name, None)
+
         if db.get("global.cloud_sync_enabled", default=False):
             time.sleep(2)
             call_upload()
@@ -275,37 +278,29 @@ def safe_askdirectory():
             raise
 
 def clean_orphaned_sessions():
-    actual_running = db.get("global.actual_running", default={})
-    to_remove = []
+    actual_running = db.get("global.actual_running", {}) or {}
+    actual_sessions = db.get("global.actual_sessions", {}) or {}
+
+    # Filtrar solo los que sigan vivos
+    alive_running = {}
+    alive_sessions = {}
 
     for game_name, info in actual_running.items():
         pid = info.get("pid")
-        if not is_process_running(pid):
-            to_remove.append(game_name)
+        if is_process_running(pid):
+            alive_running[game_name] = info
+            if game_name in actual_sessions:
+                alive_sessions[game_name] = actual_sessions[game_name]
 
-    for game_name in to_remove:
-        db.delete(f"global.actual_sessions.{game_name}")
-        db.delete(f"global.actual_running.{game_name}")
-
-    # Si actual_running quedó vacío → borrar toda la rama
-    if not db.get("global.actual_running", {}):
-        db.delete("global.actual_running")
-
-    # Si actual_sessions quedó vacío → borrar toda la rama
-    if not db.get("global.actual_sessions", {}):
-        db.delete("global.actual_sessions")
-
-    db.ensure("global.actual_running", {})
-    db.ensure("global.actual_sessions", {})
+    # Reemplazar ramas completas de una sola vez
+    db.set("global.actual_running", alive_running)
+    db.set("global.actual_sessions", alive_sessions)
 
 def is_process_running(pid):
     try:
         return psutil.pid_exists(pid) and psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
     except Exception:
         return False
-
-def extract_icon(path): 
-    return get_app_icon(path)
 
 def reload_in_thread(self, on_callback):
     def worker():
@@ -319,7 +314,7 @@ def reload_in_thread(self, on_callback):
 
         self.root.after(0, lambda: on_callback(all_data))
 
-    threading.Thread(target=worker, daemon=True).start()
+    safe_thread(worker)
 
 def collect_platform_data(platform_name):
     grouped = True
@@ -342,7 +337,7 @@ def collect_platform_data(platform_name):
 
     if grouped:
         for name, path in sorted(game_list.items(), key=lambda item: loader.sort_key(item[0], game_times)):
-            game_info = {"name": name, "path": path, "icon": extract_icon(path) or default_icon}
+            game_info = {"name": name, "path": path, "icon": get_app_icon(path) or default_icon}
             result["grouped"].append(game_info)
 
     return result

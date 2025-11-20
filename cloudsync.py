@@ -1,9 +1,10 @@
 import os
 import json
+import tempfile
 import urllib.request
-import threading
 from machine_id import get_machine_id
 from io import BytesIO
+from safe_threading import safe_thread
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 from datafiles import TOKEN_PATH, CREDENTIALS_PATH, BACKUP_FILE_NAME, DRIVE_FOLDER_NAME, TEMP_PATH, db
 from googleapiclient.discovery import build
@@ -49,6 +50,8 @@ def upload_backup(service, folder_id, backup_data):
     No descarga ni mezcla datos, solo sube lo que se le pasa.
     """
     temp_path = TEMP_PATH
+    fd, temp_path = tempfile.mkstemp(suffix=".json")
+    os.close(fd)
 
     # Guardar temporalmente el archivo en disco
     with open(temp_path, "w", encoding="utf-8") as f:
@@ -165,25 +168,22 @@ def has_internet_http(url="https://www.google.com", timeout=5):
         return False
     
 def call_merge():
-    def worker():
-        if not has_internet_http():
-            return
-        download_and_merge_backup()
-    threading.Thread(target=worker, daemon=True).start()
+    if has_internet_http():
+        safe_thread(download_and_merge_backup)
+    
     
 def call_upload():
     def worker():
-        if not has_internet_http():
-            return
-        service, creds= get_drive_service()
-        folder = get_or_create_folder(service)
-        data= build_cloud_payload_for_upload(call_download())
-        upload_backup(service, folder, data)
-    threading.Thread(target=worker, daemon=True).start()     
+        if has_internet_http():
+            service, creds= get_drive_service()
+            folder = get_or_create_folder(service)
+            data= build_cloud_payload_for_upload(call_download())
+            upload_backup(service, folder, data)
+
+    safe_thread(worker)  
 
 def call_download():
-    if not has_internet_http():
-        return
-    service, creds= get_drive_service()
-    folder = get_or_create_folder(service)
+    if has_internet_http():
+        service, creds= get_drive_service()
+        folder = get_or_create_folder(service)
     return download_backup(service, folder)

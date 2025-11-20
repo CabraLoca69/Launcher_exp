@@ -1,8 +1,8 @@
 import sys
 from cloudsync import call_merge
 from interfaces import LauncherUI
-from datafiles import db, remove_temp_path
-from helpers import GameLauncherController, clean_orphaned_sessions
+from datafiles import db
+from helpers import GameLauncherController
 
 def main():
     if "--launch" in sys.argv and "--platform" in sys.argv:
@@ -22,9 +22,7 @@ def main():
         launcherui = LauncherUI() 
         launcher_controler = GameLauncherController()
         launcherui.set()
-        remove_temp_path()
 
-        
 if __name__ == "__main__":
     try:
         main()
@@ -32,4 +30,5 @@ if __name__ == "__main__":
         print("Launcher finalizado por interrupción de VS Code.")
 
 # revisar cerrar el launcher con las notas abiertas no se guarda
-# revisar buscador
+# implementar mismo patron de cierre de properties window en cloud_settings_window
+# intentar acelerar el arranque

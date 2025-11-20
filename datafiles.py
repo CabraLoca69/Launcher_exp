@@ -53,9 +53,4 @@ db.ensure("global.last_selected_tab", None)
 db.ensure("global.actual_sessions", {})
 db.ensure("global.actual_running", {})
 
-def remove_temp_path():
-    try:
-        os.remove(TEMP_PATH)
-    except:
-        print(f"⚠ No se pudo borrar", Exception)
 

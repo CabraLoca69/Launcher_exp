@@ -11,13 +11,14 @@ import ttkbootstrap as tb
 import tkinter as tk
 from pathlib import Path
 from datetime import datetime
+from safe_threading import safe_thread
 from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageTk
 from googleapiclient.discovery import build
-from icon_utils import load_icon
+from icon_utils import load_icon, get_app_icon
 from custommenus import ConfirmDialog
 from cloudsync import get_drive_service
-from helpers import Loader, GameLauncherController, extract_icon, reload_in_thread, collect_platform_data, clean_orphaned_sessions
+from helpers import Loader, GameLauncherController, reload_in_thread, collect_platform_data, clean_orphaned_sessions
 from datafiles import DATA_DIR, ICONS_CACHE_DIR, ICONS, CONFIG_FILE, FLAG_FILE, db, notes_db
 
 if sys.platform.startswith("win"):
@@ -38,13 +39,23 @@ class SplashFrame(tb.Frame):
         self.destroy()
 
 class LauncherUI:
-    def __init__(self):
+    def __init__(self):        
+        def resource_path(rel_path):
+            if hasattr(sys, "_MEIPASS"):
+                return os.path.join(sys._MEIPASS, rel_path)
+            return rel_path
+
         self.root = tb.Window(themename="darkly")
         self.root.title("CLauncher69")
         self.root.geometry("900x600")
         self.root.minsize(600, 400)
-        self.grouped = True
-        
+
+        icon_path = resource_path("data/icons/icon.ico")
+        try:
+            self.root.iconbitmap(icon_path)
+        except Exception as e:
+            print(f"Error seteando icono: {e}")
+
         # Splash integrado
         self.splash = SplashFrame(self.root, title="Cargando Launcher...")
 
@@ -98,7 +109,7 @@ class LauncherUI:
                     except Exception as e:
                         print(f"Error al manejar el archivo de aviso: {e}")
                 time.sleep(5)
-        threading.Thread(target=loop, daemon=True).start()
+        safe_thread(loop)
 
     def restore_sessions(self):
         sessions = db.get("global.actual_sessions")
@@ -236,7 +247,7 @@ class MainLauncherFrame(tb.Frame):
         top_bar = tb.Frame(self, bootstyle="dark")
         top_bar.pack(fill="x")
 
-        email = (db.get("global.email", default= "Desconocido"))
+        email = db.get("global.email", default= "Desconocido") or "Desconocido"
 
         self.title_label = tb.Label(top_bar, text=f"Cuenta: {email}", font=("Segoe UI", 11, "bold"), bootstyle="inverse-dark")
         self.title_label.pack(side="left", padx=10, pady=5)
@@ -260,7 +271,7 @@ class MainLauncherFrame(tb.Frame):
         self.notebook.ask_platform_name()
 
     def update_title_label(self):
-        email = db.get("global.email", default= "Desconocido")
+        email = db.get("global.email", default= "Desconocido") or "Desconocido"
         self.title_label.config(text=f"Cuenta: {email}")
         
 class DraggableNotebook(tb.Notebook):
@@ -269,7 +280,7 @@ class DraggableNotebook(tb.Notebook):
         self.master = master
         self._active = None
         self.active_popup= None
-        self.input_open = False
+        self.input = False
         self.FAVORITE_LIMIT = 5
         self.platform_trees = {}
         self.loader = Loader()
@@ -342,25 +353,28 @@ class DraggableNotebook(tb.Notebook):
         except:
             pass
 
-
     def ask_platform_name(self):
         if hasattr(self, "menu_popup") and self.menu_popup:
-            self.menu_popup.destroy()
-        if not self.input_open:
-            self.empty_frame.pack_forget()
-            self.input_open = True
-            self.input = custommenus.InputDialog(self, prompt="Nombre de la Plataforma:", callback=self.new_platform, cancel_callback= self.emptyframe).pack()
+            self.menu_popup.on_close()
+        if not self.input:
+            self.emptyframe()
+            self.input = custommenus.InputDialog(self, prompt="Nombre de la Plataforma:", callback=self.input_callback_handler)
+            self.input.pack()
 
+    def input_callback_handler(self, value):
+        self.input = False 
+        if not value:
+            self.emptyframe()
+        else:
+            self.new_platform(value)
+        
     def emptyframe(self):
-        self.input_open = False 
         if not self.tabs():
             self.empty_frame.pack(fill="both", expand=True)
         elif self.empty_frame and self.tabs():
             self.empty_frame.pack_forget()
                                       
     def new_platform(self, platform_name):
-        self.input_open = False
-
         if not platform_name:
             return
 
@@ -368,7 +382,6 @@ class DraggableNotebook(tb.Notebook):
         if not folder:
             return
 
-        self.emptyframe()
         call_populate(platform_name, self)
 
         new_tab_order = [self.tab(i, "text") for i in range(self.index("end"))]
@@ -398,7 +411,7 @@ class DraggableNotebook(tb.Notebook):
                     self.loader.remove_game_icon(game_path)
             
                 index_to_select = self._active - 1 if self._active > 0 else 0
-                self.remove_platform(platform_name)
+                db.delete(platform_name)
                 self.forget(self._active)
                 tabs= self.tabs()
                 if tabs:
@@ -407,10 +420,7 @@ class DraggableNotebook(tb.Notebook):
         if len(self.tabs()) == 0:
             self.empty_frame.pack(fill="both", expand=True)
         
-        db.ensure("global.tab_order", [self.tab(i, "text") for i in range(self.index("end"))])
-    
-    def remove_platform(self, platform_name): # trabaja en conjunto con remove_tab, esto es lo que borra la plataforma de la lista
-        db.delete(platform_name)
+        db.ensure("global.tab_order", [self.tab(i, "text") for i in range(self.index("end"))])      
 
     def show_menu(self, platform_name, x_root, y_root):
         self.menu_popup = custommenus.CustomPopupMenu(self)
@@ -439,12 +449,8 @@ class DraggableNotebook(tb.Notebook):
         self.properties_window.pack()        
 
     def open_cloud_settings(self):
-        self.empty_frame.pack_forget()
-        CloudSettingsWindow(self, self.service, on_close_callback= self.on_close_cloudwdw).pack()
-        
-    def on_close_cloudwdw(self):
         self.emptyframe()
-        self.master.update_title_label()
+        CloudSettingsWindow(self, self.service, on_close_callback=self.emptyframe).pack()
            
 class GamePlatformFrame(ttk.Frame):
     def __init__(self, master, platform_name, *args, **kwargs):
@@ -521,6 +527,7 @@ class GamePlatformFrame(ttk.Frame):
                 return
    
     def on_game_right_click(self, event):
+        self.on_game_click(event)
         game_tree = self.game_tree
         item_id = game_tree.identify_row(event.y) 
         x, y = event.x_root, event.y_root
@@ -546,9 +553,11 @@ class GamePlatformFrame(ttk.Frame):
         if selection:
             # Si hay algo seleccionado → bindear Supr
             self.bind_all("<Delete>", self.on_delete_key)
+            self.bind_all("<Return>", lambda e: self.launch_game())
         else:
             # Si no hay nada → desbindear Supr
             self.unbind_all("<Delete>")
+            self.unbind_all("<Return>")
 
     def create_direct_access(self, game_name, launcher_path, game_exe_path, destino_desktop=True):
         if hasattr(self, "menu_popup") and self.menu_popup:
@@ -582,7 +591,7 @@ class GamePlatformFrame(ttk.Frame):
         # Asegurar que el icono esté cacheado
         if os.path.exists(game_exe_path):
             try:
-                extract_icon(game_exe_path)  # fuerza caché
+                get_app_icon(game_exe_path)  # fuerza caché
             except Exception as e:
                 print(f"Error extrayendo icono: {e}")
         
@@ -678,7 +687,7 @@ class GamePlatformFrame(ttk.Frame):
             # Asegurar que el icono esté cacheado
             if os.path.exists(game_path):
                 try:
-                    extract_icon(game_path)  # fuerza caché
+                    get_app_icon(game_path)  # fuerza caché
                 except Exception as e:
                     print(f"Error extrayendo icono: {e}")
 
@@ -807,7 +816,7 @@ class GamePlatformFrame(ttk.Frame):
         game_list = db.get([platform_name, "game_list"], default={})
         for game_name, game_path in game_list.items():
             if search_text in game_name.lower():
-                icon = extract_icon(game_path) or self.default_icon
+                icon = get_app_icon(game_path) or self.default_icon
                 game_tree.icon_images[game_name] = icon
                 base_name = os.path.splitext(game_name)[0]
                 game_tree.insert("", "end", iid=game_name, text="", image=icon, values=(base_name,))
@@ -986,7 +995,7 @@ class GameDetailsPanel(tb.Frame):
                     frame = tb.Frame(self)
                     frame.pack(fill="x", padx=20, pady=5)
 
-                    icon = extract_icon(path)  # Función que ya usás para obtener íconos
+                    icon = get_app_icon(path)  # Función que ya usás para obtener íconos
                     if icon:
                         icon_label = tk.Label(frame, image=icon)
                         icon_label.image = icon
@@ -1200,16 +1209,16 @@ class PropertiesWindow(custommenus.AutoCloseFrame):
         x, y = event.x_root, event.y_root
         self.menu.show(x, y)
  
-    def menu_closed(self, event):
-        if event:
-            super().check_click_outside(event)
+    def menu_closed(self, closed = False):
+        if closed:
+            self.bind_escape()
+            self.bind_click_outside()
   
     def toggle_multiple_games(self):
         # Cambiar el valor de allow_multiple_games en el config
         current_value = db.get("global.allow_multiple_games", default= False)
         db.set("global.allow_multiple_games", not current_value)
         
-    
     def btn_new_path(self):
         self.close_menu()
         self.loader.add_folder(self.platform_name)
@@ -1259,7 +1268,6 @@ class PropertiesWindow(custommenus.AutoCloseFrame):
             # Actualizar UI
             path_listbox.delete(selected[0])
             self.update_game_list()
-
 
     def close_menu(self):
         for widget in self.winfo_children():
@@ -1332,7 +1340,7 @@ class CloudSettingsWindow(custommenus.AutoCloseFrame):
 
         # Checkbox para sincronización automática
         self.auto_sync_var = tk.BooleanVar(value=db.get("global.cloud_sync_enabled", default= False))
-        chk_sync = tb.Checkbutton(self.sync_tab, text="Habilitar sincronización automática", variable=self.auto_sync_var, bootstyle="success", command=self.save_sync_setting)
+        chk_sync = tb.Checkbutton(self.sync_tab, text="Habilitar sincronización automática", variable=self.auto_sync_var, bootstyle="success", command=self.toggle_clouding)
         chk_sync.pack(pady=20, padx=20, anchor="w")
 
         # Etiqueta con info de la cuenta
@@ -1343,35 +1351,33 @@ class CloudSettingsWindow(custommenus.AutoCloseFrame):
         btn_change_account = tb.Button(
         self.sync_tab, text="🔄 Cambiar cuenta", bootstyle="warning-outline", command=self.change_account)
         btn_change_account.pack(pady=10, padx=20)
-        
-    # === Funciones de sincronización ===
-    def save_sync_setting(self):
-        db.set("global.cloud_sync_enabled", self.auto_sync_var.get())
-        if not db.get("global.email"):
-            self.recall_token(True)
-            
+                    
     # === Funciones de cuenta ===
     def get_account_info(self):
         return db.get("global.email", default= "Desconocido") or "Desconocido"
-
+    
+    def toggle_clouding(self):
+        actual_setting = db.get("global.cloud_sync_enabled")
+        db.set("global.cloud_sync_enabled", not actual_setting)
+        
+        if db.get("global.email") is None:
+            ConfirmDialog(self, title="Seras redirigido al navegador", message= "¿Estas seguro?", callback=self.recall_token).place(relx=0.5, rely=0.5, anchor="center")
 
     def change_account(self):
-        ConfirmDialog(self, title="Deberas volver a iniciar sesion", message= "¿Estas seguro?", callback=self.recall_token).place(relx=0.5, rely=0.5, anchor="center")
+        if db.get("global.email") is not None:
+            ConfirmDialog(self, title="Deberas volver a iniciar sesion", message= "¿Estas seguro?", callback=self.recall_token).place(relx=0.5, rely=0.5, anchor="center")
+        else:
+            ConfirmDialog(self, title="Seras redirigido al navegador", message= "¿Estas seguro?", callback=self.recall_token).place(relx=0.5, rely=0.5, anchor="center")
 
     def recall_token(self, respond):
-        if respond:
-            self.destroy()
-        if not respond:
-            self.destroy()
+        self.destroy()
             
         def worker():
             if respond:
                 token_path = DATA_DIR / "token.json"
 
                 if not db.get("global.cloud_sync_enabled"):
-                    db.ensure("global.cloud_sync_enabled", True)
-                    # actualizar variable de Tkinter desde el hilo principal
-                    self.parent.after(0, lambda: self.auto_sync_var.set(True))
+                    db.set("global.cloud_sync_enabled", True)
                 
                 if token_path.exists():
                     token_path.unlink()
@@ -1384,8 +1390,9 @@ class CloudSettingsWindow(custommenus.AutoCloseFrame):
                 self.service = service
                 self.parent.service = self.service
                 db.set("global.email", self.get_user_email(creds))
+                self.parent.after(0, lambda: self.master.master.update_title_label())
 
-        threading.Thread(target=worker, daemon=True).start()
+        safe_thread(worker)
             
     def get_user_email(self, creds):
         service = build("oauth2", "v2", credentials=creds)
@@ -1399,7 +1406,7 @@ def call_populate(platform_name, target):
         # Una vez listo, volvés al hilo principal
         target.after(0, lambda: populate_ui(all_data, target))
 
-    threading.Thread(target=worker, daemon=True).start()
+    safe_thread(worker)
 
 def populate_ui(all_data, target, select_new= True):
     def fill_tree(tree, grouped):     

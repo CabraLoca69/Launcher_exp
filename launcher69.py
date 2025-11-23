@@ -5,30 +5,20 @@ from datafiles import db
 from helpers import GameLauncherController
 
 def main():
-    if "--launch" in sys.argv and "--platform" in sys.argv:
+    if "--launch" in sys.argv:
         game_name = sys.argv[sys.argv.index("--launch") + 1]
-        platform_name = sys.argv[sys.argv.index("--platform") + 1]
-        game_path = db.get([platform_name, "game_list", game_name])
         launcher_controler = GameLauncherController()
-        if game_path:
-            launcher_controler.launch_game(game_name)
-        else:
-            print("No se encontró el juego.")
+        launcher_controler.launch_game(game_name)
             
     else:
         if db.get("global.cloud_sync_enabled"):
             call_merge()
 
-        launcherui = LauncherUI() 
         launcher_controler = GameLauncherController()
+        launcherui = LauncherUI() 
         launcherui.set()
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("Launcher finalizado por interrupción de VS Code.")
+    main()
 
-# revisar cerrar el launcher con las notas abiertas no se guarda
-# implementar mismo patron de cierre de properties window en cloud_settings_window
-# intentar acelerar el arranque
+# intentar comunicar los hilos para la pantalla de carga

@@ -1,64 +1,138 @@
+# cloud_sync.py
 import os
 import json
 import tempfile
+import logging
 import urllib.request
-from machine_id import get_machine_id
 from io import BytesIO
-from safe_threading import safe_thread
+from typing import Dict, Any
+
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
-from datafiles import TOKEN_PATH, CREDENTIALS_PATH, BACKUP_FILE_NAME, DRIVE_FOLDER_NAME, TEMP_PATH, db
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 
+from machine_id import get_machine_id
+from safe_threading import safe_thread
+from datafiles import TOKEN_PATH, CREDENTIALS_PATH, BACKUP_FILE_NAME, DRIVE_FOLDER_NAME, TEMP_PATH, db
+
+# Scopes para Drive (sólo archivos de app)
 SCOPES = [
     'https://www.googleapis.com/auth/drive.file',
     'https://www.googleapis.com/auth/userinfo.email',
     'openid'
 ]
 
+
+# -------------------------
+# Utilidades para internet
+# -------------------------
+def has_internet_http(url: str = "https://www.google.com", timeout: int = 5) -> bool:
+    try:
+        urllib.request.urlopen(url, timeout=timeout)
+        return True
+    except Exception:
+        return False
+
+
+# -------------------------
+# Google Drive auth & folder
+# -------------------------
 def get_drive_service():
     creds = None
     if TOKEN_PATH.exists():
-        creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
+        try:
+            creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
+        except Exception:
+            logging.exception("No se pudo leer TOKEN_PATH, reautenticando.")
+
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
+            try:
+                creds.refresh(Request())
+            except Exception:
+                logging.exception("No se pudo refrescar credenciales. Hará login interactivo.")
+                creds = None
+
+        if not creds:
+            # flujo interactivo en local
             flow = InstalledAppFlow.from_client_secrets_file(str(CREDENTIALS_PATH), SCOPES)
             creds = flow.run_local_server(port=0)
+
+        # persistir token
         with open(TOKEN_PATH, "w", encoding="utf-8") as token_file:
             token_file.write(creds.to_json())
+
     service = build("drive", "v3", credentials=creds)
     return service, creds
 
+
 def get_or_create_folder(service):
     query = f"name='{DRIVE_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
-    results = service.files().list(q=query, fields="files(id)").execute()
+    results = service.files().list(q=query, fields="files(id,name)").execute()
     items = results.get("files", [])
     if items:
         return items[0]["id"]
-    # Crear carpeta
+
     file_metadata = {"name": DRIVE_FOLDER_NAME, "mimeType": "application/vnd.google-apps.folder"}
     folder = service.files().create(body=file_metadata, fields="id").execute()
     return folder["id"]
 
-def upload_backup(service, folder_id, backup_data):
-    """
-    Sube o actualiza el archivo JSON de backup en Google Drive.
-    No descarga ni mezcla datos, solo sube lo que se le pasa.
-    """
-    temp_path = TEMP_PATH
+
+# -------------------------
+# Flatten / Rebuild helpers
+# -------------------------
+def flatten_config(nested: Dict[str, Any], prefix: str = "") -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    for key, value in nested.items():
+        full = f"{prefix}.{key}" if prefix else key
+        if isinstance(value, dict):
+            out.update(flatten_config(value, full))
+        else:
+            out[full] = value
+    return out
+
+
+def rebuild_nested_config(flat: Dict[str, Any]) -> Dict[str, Any]:
+    root: Dict[str, Any] = {}
+    for full_key, value in flat.items():
+        parts = full_key.split(".")
+        ref = root
+        for p in parts[:-1]:
+            if p not in ref or not isinstance(ref[p], dict):
+                ref[p] = {}
+            ref = ref[p]
+        ref[parts[-1]] = value
+    return root
+
+
+# -------------------------
+# DB helpers (compat con SQLite key-value)
+# -------------------------
+def write_full_config_to_db(nested_config: Dict[str, Any]):
+    flat = flatten_config(nested_config)
+    for key, value in flat.items():
+        db.set(key, value)
+
+
+def read_full_config_from_db() -> Dict[str, Any]:
+    flat = db.get_all()  # devuelve dict plano key->value
+    return rebuild_nested_config(flat)
+
+
+# -------------------------
+# Backup upload / download
+# -------------------------
+def upload_backup(service, folder_id, backup_data: Dict[str, Any]):
+    # archivo temporal
     fd, temp_path = tempfile.mkstemp(suffix=".json")
     os.close(fd)
-
-    # Guardar temporalmente el archivo en disco
-    with open(temp_path, "w", encoding="utf-8") as f:
-        json.dump(backup_data, f, indent=4)
-
     try:
-        # Buscar si ya existe el archivo en la carpeta de Drive
+        with open(temp_path, "w", encoding="utf-8") as f:
+            json.dump(backup_data, f, indent=4, ensure_ascii=False)
+
+        # buscar archivo existente
         query = f"name='{BACKUP_FILE_NAME}' and '{folder_id}' in parents and trashed=false"
         results = service.files().list(q=query, fields="files(id)").execute()
         items = results.get("files", [])
@@ -66,26 +140,25 @@ def upload_backup(service, folder_id, backup_data):
         media = MediaFileUpload(str(temp_path), mimetype="application/json")
 
         if items:
-            # Si ya existe, lo actualiza
             service.files().update(fileId=items[0]["id"], media_body=media).execute()
         else:
-            # Si no existe, lo crea
             metadata = {"name": BACKUP_FILE_NAME, "parents": [folder_id]}
             service.files().create(body=metadata, media_body=media, fields="id").execute()
 
     finally:
         try:
-            os.remove(temp_path)        
-        except PermissionError:
+            os.remove(temp_path)
+        except Exception:
             pass
 
-def download_backup(service, folder_id):
+
+def download_backup(service, folder_id) -> Dict[str, Any]:
     query = f"name='{BACKUP_FILE_NAME}' and '{folder_id}' in parents and trashed=false"
     results = service.files().list(q=query, fields="files(id, name)").execute()
     items = results.get("files", [])
 
     if not items:
-        #print("ℹ️ No se encontró un backup en Drive.")
+        logging.info("No se encontró backup en Drive.")
         return {}
 
     file_id = items[0]["id"]
@@ -99,91 +172,137 @@ def download_backup(service, folder_id):
 
     fh.seek(0)
     try:
-        data = json.load(fh)
-        return data
+        return json.load(fh)
     except json.JSONDecodeError:
-        #print("⚠ Error al leer el backup (formato inválido).")
+        logging.error("Error al leer el backup descargado (JSON inválido).")
+        return {}
+    except Exception:
+        logging.exception("Error inesperado leyendo backup.")
         return {}
 
-def build_cloud_payload_for_upload(existing_data=None):
+
+# -------------------------
+# Cloud payload / merge
+# -------------------------
+def build_cloud_payload_for_upload(existing_cloud_data: Dict[str, Any] = None) -> Dict[str, Any]:
     pc_id = get_machine_id()
+    cloud_data = existing_cloud_data.copy() if existing_cloud_data else {}
+    cloud_data.setdefault("pc_ids", {})
 
-    # Si no hay datos previos, inicializamos
-    cloud_data = existing_data or {}
-    if "pc_ids" not in cloud_data:
-        cloud_data["pc_ids"] = {}
+    nested = read_full_config_from_db()
 
-    # Reemplazamos solo la sección de esta PC
-    local_data = {}
-    for platform, pdata in db.get_all().items():
+    # nested tiene estructura: { "steam": { "game_total_times": { "Game": { "pc1": 123.0 }}}}
+    local_data: Dict[str, Dict[str, float]] = {}
+
+    for platform, pdata in nested.items():
         if platform == "global":
             continue
-        for game, times_by_pc in pdata["game_total_times"].items():
-            local_data.setdefault(platform, {})[game] = times_by_pc.get(pc_id, 0.0)
+        gtot = pdata.get("game_total_times", {})
+        if not isinstance(gtot, dict):
+            continue
+        for game, by_pc in gtot.items():
+            # by_pc puede ser dict or simple float (compat con viejos)
+            if isinstance(by_pc, dict):
+                total_for_this_pc = by_pc.get(pc_id, 0.0)
+            else:
+                total_for_this_pc = float(by_pc or 0.0)
+            local_data.setdefault(platform, {})[game] = total_for_this_pc
 
     cloud_data["pc_ids"][pc_id] = local_data
     return cloud_data
 
-def download_and_merge_backup():
-    local_config = {}
-    local_config = db.get_all()
-    
-    cloud_data = call_download()
-    if not cloud_data:
-        return local_config
 
-    merged_config = merge_backup_data(local_config, cloud_data)
+def merge_backup_data(local_nested: Dict[str, Any], cloud_data: Dict[str, Any]) -> Dict[str, Any]:
+    merged = json.loads(json.dumps(local_nested))  # deep copy simple
 
-    db.data = merged_config
-    db.save()
-    
-    return merged_config
-
-def merge_backup_data(local_config, cloud_data):
-    """
-    Combina las horas de juego de cloud_data con local_config.
-    Solo suma los valores de game_total_times por juego.
-    """
-    merged = local_config.copy()
-    cloud_pc_data = cloud_data.get("pc_ids", {}) # obtenemos los datos de todas las pc
+    cloud_pc_data = cloud_data.get("pc_ids", {}) or {}
     for cloud_pc, platforms in cloud_pc_data.items():
-        for platform, pdata in platforms.items():
-            if platform not in merged:
-                merged[platform] = {}
+        for platform, games in platforms.items():
+            if not isinstance(games, dict):
+                continue
+            platform_node = merged.setdefault(platform, {})
+            local_game_totals = platform_node.setdefault("game_total_times", {})
 
-            # Cada juego guarda un dict con pc_id como key
-            local_games = merged[platform].setdefault("game_total_times", {})
-            for game, time in pdata.items():
-                game_times_by_pc = local_games.setdefault(game, {})
-                # Si no existe tiempo para esta PC, lo inicializamos
-                game_times_by_pc[cloud_pc] = max(game_times_by_pc.get(cloud_pc, 0.0), float(time)) 
-           
+            for game, time_val in games.items():
+                time_val = float(time_val or 0.0)
+                # obtener dict por pc en local
+                local_by_pc = local_game_totals.setdefault(game, {})
+                # si no es dict, migramos valor a dict bajo algún id (compat con historic)
+                if not isinstance(local_by_pc, dict):
+                    # si local_by_pc es número, convertirlo a { "<local_pc>": value }
+                    # pero no podemos saber el pc id anterior: lo dejamos como valor en "__legacy"
+                    local_game_totals[game] = {"__legacy": float(local_by_pc)}
+                    local_by_pc = local_game_totals[game]
+
+                prev = local_by_pc.get(cloud_pc, 0.0)
+                local_by_pc[cloud_pc] = max(prev, time_val)
+
     return merged
 
-def has_internet_http(url="https://www.google.com", timeout=5):
+
+# -------------------------
+# High level tasks
+# -------------------------
+def download_and_merge_backup():
     try:
-        urllib.request.urlopen(url, timeout=timeout)
-        return True
+        if not has_internet_http():
+            logging.info("No hay conexión. Abortando descarga merge.")
+            return read_full_config_from_db()
+
+        service, creds = get_drive_service()
+        folder_id = get_or_create_folder(service)
+        cloud = download_backup(service, folder_id)
+        if not cloud:
+            logging.info("No hay backup en la nube o está vacío.")
+            return read_full_config_from_db()
+
+        local_nested = read_full_config_from_db()
+        merged = merge_backup_data(local_nested, cloud)
+
+        # escribir merged a la DB plano
+        write_full_config_to_db(merged)
+        logging.info("Merge cloud->local completado y guardado.")
+        return merged
+
     except Exception:
-        return False
-    
+        logging.exception("Error en download_and_merge_backup:")
+        return read_full_config_from_db()
+
+
 def call_merge():
-    if has_internet_http():
-        safe_thread(download_and_merge_backup)
-    
-    
+    safe_thread(download_and_merge_backup)
+
+
 def call_upload():
     def worker():
-        if has_internet_http():
-            service, creds= get_drive_service()
-            folder = get_or_create_folder(service)
-            data= build_cloud_payload_for_upload(call_download())
-            upload_backup(service, folder, data)
+        try:
+            if not has_internet_http():
+                logging.info("No internet, abort upload.")
+                return
 
-    safe_thread(worker)  
+            service, creds = get_drive_service()
+            folder_id = get_or_create_folder(service)
+            existing = download_backup(service, folder_id) or {}
+            payload = build_cloud_payload_for_upload(existing)
+            upload_backup(service, folder_id, payload)
+            logging.info("Backup subido correctamente.")
+        except Exception:
+            logging.exception("Error en call_upload()")
+
+    safe_thread(worker)
+
 
 def call_download():
-    if has_internet_http():
-        service, creds= get_drive_service()
-        folder = get_or_create_folder(service)
-    return download_backup(service, folder)
+    """
+    Descarga el backup y lo devuelve (bloqueante).
+    Retorna {} si no hay internet o falla.
+    """
+    if not has_internet_http():
+        return {}
+    try:
+        service, creds = get_drive_service()
+        folder_id = get_or_create_folder(service)
+        return download_backup(service, folder_id)
+    except Exception:
+        logging.exception("call_download error")
+        return {}

@@ -36,9 +36,8 @@ def main():
     run([
         "pyinstaller",
         "--onedir",
-        "--windowed",
-        f"--icon={ICON_PATH}",
         "--noconsole",
+        f"--icon={ICON_PATH}",
         "--hidden-import=PIL._tkinter_finder",
         "--add-data", ADD_DATA,
 

@@ -1,7 +1,9 @@
 import os
+import sys
 import platform
 import datafiles
 import subprocess
+import ctypes
 from pathlib import Path
 from PIL import Image, ImageTk
 
@@ -127,17 +129,20 @@ def _get_linux_icon(path, size, fallback_icon):
 
 # ------------- Icono por defecto -------------#
 def set_window_icon(window, icon_name="icon.ico"):
-    """
-    Configura el ícono de la ventana Tkinter de forma multiplataforma.
-    - En Windows usa .ico directamente.
-    - En Linux/macOS convierte a .png y usa wm iconphoto.
-    """
-
     icon_path = Path(datafiles.ICONS) / icon_name
 
     if platform.system() == "Windows":
-        # Tkinter soporta .ico en Windows
-        window.iconbitmap(str(icon_path))
+        def resource_path(rel_path):
+            if hasattr(sys, "_MEIPASS"):
+                return os.path.join(sys._MEIPASS, rel_path)
+            return rel_path
+        
+        icon_path = resource_path(icon_path)
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Launcher69.App")
+        try:
+            window.iconbitmap(icon_path)
+        except Exception as e:
+            print(f"Error seteando icono: {e}")
     else:
         # Convertir a PNG (si no existe ya)
         png_path = icon_path.with_suffix(".png")
@@ -156,19 +161,10 @@ def set_window_icon(window, icon_name="icon.ico"):
         window._icon_photo = photo  # mantener referencia
 
 def is_wine_executable(path: str) -> bool:
-    """
-    Devuelve True si el archivo es un ejecutable de Windows que probablemente
-    se ejecutará con Wine en Linux.
-    """
     path = str(path)
     return path.lower().endswith((".exe", ".bat", ".cmd")) or "wine" in path.lower()
 
 def get_wine_icon(path: str, size=(16,16), fallback_icon=None, wineprefix=None, icon_dir=datafiles.ICONS) -> Image.Image:
-    """
-    Extrae un icono de un ejecutable de Windows en Linux usando icotool.
-    Si falla, busca el .ico cacheado desde Windows en datafiles.ICONS_CACHE_DIR.
-    Finalmente, usa fallback_icon si nada de eso existe.
-    """
     path = str(path)
     fallback_icon = fallback_icon or os.path.join(icon_dir, "no_icon.ico")
 
@@ -220,16 +216,12 @@ def get_wine_icon(path: str, size=(16,16), fallback_icon=None, wineprefix=None, 
     return Image.open(fallback_icon).convert("RGBA").resize(size, Image.LANCZOS)
  
 def load_icon(path, size=(16, 16)):
-    """
-    Carga un ícono (ico/png/jpg) y devuelve un ImageTk.PhotoImage.
-    En Linux convierte automáticamente .ico a .png.
-    """
     path = Path(path)
     if platform.system() == "Linux" and path.suffix.lower() == ".ico":
         path = ico_to_png(path, output_dir=path.parent, size=size)
     img = Image.open(path).resize(size, Image.LANCZOS)
     return ImageTk.PhotoImage(img) 
-        
+
 def ico_to_png(ico_path, output_dir=None, size=(64, 64)):
     """
     Convierte un archivo .ico a .png.

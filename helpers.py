@@ -5,13 +5,14 @@ import threading
 import psutil
 import time
 import sys
+import json
 from safe_threading import safe_thread
 from datetime import datetime
 from tkinter import filedialog
 from machine_id import get_machine_id
 from cloudsync import call_upload
 from icon_utils import get_app_icon, load_icon
-from datafiles import ICONS, FLAG_FILE, db
+from datafiles import ICONS, FLAG_FILE, db, update_db
 
 class Loader:
     def __init__(self):
@@ -23,18 +24,14 @@ class Loader:
         folder = safe_askdirectory()
         
         # Asegura que exista la estructura base de la plataforma
-        db.ensure(platform_name, {
-                    "platform_folders": [],
-                    "game_list": {},
-                    "favorites": [],
-                    "game_times": {},
-                    "game_total_times": {}
-                })
+        db.ensure(f"{platform_name}.platform_folders", [])
+        db.ensure(f"{platform_name}.favorites", [])
+        
         # Ahora agregamos la carpeta si no está
-        folders = db.get([platform_name, "platform_folders"])
+        folders = db.get(f"{platform_name}.platform_folders")
         if folder not in folders:
             folders.append(folder)
-            db.set([platform_name, "platform_folders"], folders)
+            db.set(f"{platform_name}.platform_folders", folders)
 
         self.scan_for_games(platform_name)
         return folder
@@ -47,21 +44,33 @@ class Loader:
             return os.path.isfile(path) and os.access(path, os.X_OK)
 
     def scan_for_games(self, platform_name):
-        ignore_keywords = [kw.lower() for kw in["vc_redist", "unins", "setup", "install", "dxsetup", "dotnet", "readme", "helper", "support", "launcher", "Launcher", "Win64"]]
+        ignore_keywords = [
+            kw.lower() for kw in [
+            "vc_redist", "unins", "setup", "install", "dxsetup",
+            "dotnet", "readme", "helper", "support", "launcher", "win64"
+        ]
+        ]
 
-        for path in db.get([platform_name, "platform_folders"]):
+        db.ensure(f"{platform_name}.game_list", {})
+        folders = db.get(f"{platform_name}.platform_folders", [])
+
+        for path in folders:
+            if not os.path.isdir(path):
+                continue
+
             for root, _, files in os.walk(path):
                 for file in files:
                     full_path = os.path.join(root, file)
+
                     if not self.is_executable(full_path):
                         continue
-                    if any(keyword in file.lower() for keyword in ignore_keywords):
-                        continue
-                    key = os.path.splitext(file)[0]
-                    db.set([platform_name, "game_list", key], full_path)
-        
-        
 
+                    if any(k in file.lower() for k in ignore_keywords):
+                        continue
+
+                    key = os.path.splitext(file)[0]
+                    db.set(f"{platform_name}.game_list.{key}", full_path)
+        
     def sort_key(self, game_name, game_times):
         sessions = game_times.get(game_name, [])
         if sessions:
@@ -83,16 +92,26 @@ class Loader:
             
 class GameLauncherController:
     _instance = None
+    _initalized = False
     
     def __new__(cls, *args, **kwargs):
         if not cls._instance:
+            clean_orphaned_sessions()
             cls._instance = super(GameLauncherController, cls).__new__(cls, *args, **kwargs)
+            
         return cls._instance
 
     def __init__(self):
-        self.launched = False
+        if GameLauncherController._initalized:
+            return
+        
         self.already_saved = {}
         self.lock = threading.Lock()
+        self.ui_registry = {}
+        self.update_thread_running = False
+
+        GameLauncherController._initalized = True
+        
 
 # Helpers de ejecución
     def _run_windows(self, game_path):
@@ -126,7 +145,7 @@ class GameLauncherController:
 
         elif sys.platform.startswith("linux"):
             if self._needs_wine(game_path):
-                wineprefix = db.get(["global.wineprefix"], os.path.expanduser("~/.wine"))
+                wineprefix = db.get("global.wineprefix", os.path.expanduser("~/.wine"))
                 return self._run_linux_wine(game_path, wineprefix)
             else:
                 return self._run_linux_native(game_path)
@@ -135,25 +154,33 @@ class GameLauncherController:
             raise NotImplementedError(f"SO no soportado: {sys.platform}")
 
 # Lógica principal
-    def launch_game(self, game_name, on_game_end=None):
+    def launch_game(self, game_name):
         def resolve_game(game_name):
+            search = f"%.game_list.{game_name}"
+    
             with db.lock:
-                for platform, data in db.data.items():
-                    if platform == "global":
-                        continue
-                    if game_name in data.get("game_list", {}):
-                        return platform, data["game_list"][game_name]
+                cur = db.conn.cursor()
+                cur.execute("SELECT key, value FROM config WHERE key LIKE ?", (search,))
+                row = cur.fetchone()
+
+            if not row:
                 raise ValueError(f"Juego '{game_name}' no encontrado")
+
+            key, value_json = row
+
+            platform = key.split(".")[0]
+
+            game_data = json.loads(value_json)
+
+            return platform, game_data
         
         def execute():
             with self.lock:
                 allow_multiple = db.get("global.allow_multiple_games") or False
-                if not allow_multiple and self.launched:
+                if not allow_multiple:
                     logging.info("Ya hay un juego en ejecución, no se puede iniciar otro.")
                     return
-                self.launched = True
 
-            clean_orphaned_sessions()
             platform_name, game_path = resolve_game(game_name)
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             start_time = time.time()
@@ -164,13 +191,9 @@ class GameLauncherController:
             pid = process.pid
 
             # Guardar datos iniciales
-            with self.lock:
-                db.set(["global","actual_sessions", game_name],{
-                    "pid": pid,
-                    "start_time": start_dt.isoformat(),
-                }) 
-                db.set(["global","actual_running", game_name], {"pid": pid})
-
+            db.set(f"global.actual_sessions.{game_name}",{"pid": pid,"start_time": start_dt.isoformat(),}) 
+            db.set(f"global.actual_running.{game_name}", {"pid": pid})
+            
             with open(FLAG_FILE, "w") as f:
                 f.write("1")
 
@@ -179,6 +202,7 @@ class GameLauncherController:
             # ---------------------------
             running = True
             def periodic_saver():
+                nonlocal running
                 while running:
                     time.sleep(300)
                     if not running:
@@ -193,74 +217,107 @@ class GameLauncherController:
             finally:
                 with self.lock:
                     running = False
-                    db.delete(["global", "actual_running", game_name])
-                    db.delete(["global", "actual_sessions", game_name])
-                    self._finalize_playtime(platform_name, game_name, start_time, now)
-                    self.launched = False
-                    if on_game_end:
-                        on_game_end()
-
-        if db.get(["global", "actual_running", game_name]) is None:
-            safe_thread(execute)
+                    db.delete(f"global.actual_running.{game_name}")
+                    db.delete(f"global.actual_sessions.{game_name}")
+                    self._finalize_playtime(platform_name, game_name, start_time, now)                    
+                    
+        if db.get(f"global.actual_running.{game_name}") is None:
+            safe_thread(execute, daemon= False)
 
 # Helpers de guardado de tiempos
     def _save_playtime(self, platform_name, game_name, start_time, now):
         dur_min = (time.time() - start_time) / 60
-        with self.lock:
-            game_times = db.get([platform_name, "game_times", game_name], default=[])
+        pcid = get_machine_id()
 
-            if game_times and game_times[-1]["Start"] == now:
-                game_times[-1]["Tiempo"] = round(dur_min, 2)
+        with db.lock:
+            # --- GAME TIMES (sessions)
+            sessions_list = db.get(f"{platform_name}.game_times.{game_name}", default= [])
+
+            if sessions_list and sessions_list[-1]["Start"] == now:
+                sessions_list[-1]["Tiempo"] = round(dur_min, 2)
             else:
-                game_times.append({"Start": now, "Tiempo": round(dur_min, 2)})
+                sessions_list.append({"Start": now, "Tiempo": round(dur_min, 2)})
 
-            game_times = game_times[-5:]
-            db.set([platform_name, "game_times", game_name], game_times)
+            # Solo los últimos 5
+            sessions_list = sessions_list[-5:]
 
-            pcid = get_machine_id()
-            total_times = db.get([platform_name, "game_total_times", game_name], default={})
-            if pcid not in total_times:
-                total_times[pcid] = 0
+            # Guardar como claves child
+            base = f"{platform_name}.game_times.{game_name}"
+            for idx, sess in enumerate(sessions_list):
+                db.set(f"{base}.{idx}", sess)
 
-            total_times[pcid] += round(dur_min, 2)
-            db.set([platform_name, "game_total_times", game_name], total_times)
-            
-            self.already_saved[game_name] = True
-            if db.get("global.cloud_sync_enabled", default=False):
-                time.sleep(2)
-                call_upload()
+            # --- TOTAL TIMES POR PC
+            current_total = db.get(f"{platform_name}.game_total_times.{game_name}.{pcid}", 0.0)
+
+            new_total = round(current_total + dur_min, 2)
+            db.set(f"{platform_name}.game_total_times.{game_name}.{pcid}", new_total)
+
+        self.already_saved[game_name] = True
+
+    if db.get("global.cloud_sync_enabled", default=False):
+        time.sleep(2)
+        call_upload()
 
     def _finalize_playtime(self, platform_name, game_name, start_time, now):
-        pcid = get_machine_id()
         dur_min = (time.time() - start_time) / 60
-        
-        total_times = db.get([platform_name, "game_total_times", game_name], default={})
-        total_for_pcid = total_times.get(pcid, 0.0)
-        
-        game_times = db.get([platform_name, "game_times", game_name], default=[])
+        pcid = get_machine_id()
 
-        if self.already_saved.get(game_name, False):
-            last_time = game_times[-1]["Tiempo"] if game_times else 0
-            diff = dur_min - last_time
-            if diff > 0:
-                total_times[pcid] = round(total_for_pcid + diff, 2)
-        else:
-            total_times[pcid] = round(total_for_pcid + dur_min, 2)
-        
-        db.set([platform_name, "game_total_times", game_name], total_times)
+        with db.lock:
+            base = f"{platform_name}.game_times.{game_name}"
 
-        if game_times and game_times[-1]["Start"] == now:
-            game_times[-1]["Tiempo"] = round(dur_min, 2)
-        else:
-            game_times.append({"Start": now, "Tiempo": round(dur_min, 2)})
+            # Sessions
+            sessions_list = db.get(base, default= [])
+            current_total = db.get(f"{platform_name}.game_total_times.{game_name}.{pcid}", 0.0)
 
-        game_times = game_times[-5:]
-        db.set([platform_name, "game_times", game_name], game_times)
-        self.already_saved.pop(game_name, None)
+            # Ajuste según si hubo guardado previo
+            if self.already_saved.get(game_name, False):
+                last_time = sessions_list[-1]["Tiempo"] if sessions_list else 0
+                diff = dur_min - last_time
+                if diff > 0:
+                    current_total += diff
+            else:
+                current_total += dur_min
+
+            # Guardar totales
+            db.set(f"{platform_name}.game_total_times.{game_name}.{pcid}", round(current_total, 2))
+
+            # Actualizar sesión final
+            if sessions_list and sessions_list[-1]["Start"] == now:
+                sessions_list[-1]["Tiempo"] = round(dur_min, 2)
+            else:
+                sessions_list.append({"Start": now, "Tiempo": round(dur_min, 2)})
+
+            sessions_list = sessions_list[-5:]
+            db.set(base,sessions_list)
+            update_db.ensure(platform_name, game_name)
+
+            self.already_saved.pop(game_name, None)
 
         if db.get("global.cloud_sync_enabled", default=False):
             time.sleep(2)
             call_upload()
+
+    def update_watcher(self):
+        while True:
+            time.sleep(4)
+
+            for platform, ui in list(self.ui_registry.items()):
+                game_name = update_db.get(platform)
+                if not game_name:
+                    continue
+
+                update_db.delete(platform)
+
+                try:
+                    ui.update_on_close(game_name, platform)
+                except Exception as e:
+                    logging.error(f"Error updating UI for {platform}: {e}")
+
+    def register_ui(self, platform, ui_instance):
+        self.ui_registry[platform] = ui_instance
+        if not self.update_thread_running:
+            self.update_thread_running = True
+            safe_thread(self.update_watcher)
 
 def safe_askdirectory():
     try:
@@ -309,8 +366,7 @@ def reload_in_thread(self, on_callback):
         tab_order = db.get("global.tab_order", [])        
 
         for platform_name in tab_order:
-            if db.get(platform_name, None) is not None:
-                all_data.append(collect_platform_data(platform_name))
+            all_data.append(collect_platform_data(platform_name))
 
         self.root.after(0, lambda: on_callback(all_data))
 
@@ -331,9 +387,9 @@ def collect_platform_data(platform_name):
 
     loader = Loader()
 
-    game_list   = db.get([platform_name, "game_list"], {})
-    game_times  = db.get([platform_name, "game_times"], {})
-    favorites   = db.get([platform_name, "favorites"], [])
+    game_list   = db.get_children(f"{platform_name}.game_list")
+    game_times  = db.get_children(f"{platform_name}.game_times")
+    favorites   = db.get_children(f"{platform_name}.favorites")
 
     if grouped:
         for name, path in sorted(game_list.items(), key=lambda item: loader.sort_key(item[0], game_times)):

@@ -3,7 +3,6 @@ import threading
 from pathlib import Path
 from typing import Any, Union, List
 
-
 class JsonDatabase:
     def __init__(self, file_path: str):
         self.file_path = Path(file_path)

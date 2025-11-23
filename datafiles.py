@@ -1,20 +1,20 @@
-import os
 import sys
 from pathlib import Path
 from jsondb import JsonDatabase
+from sqlitedb import SQLiteDatabase
 
 # ------------------------------
 # Directorios de datos
 # ------------------------------
-def get_data_dir():
-    """Devuelve la carpeta principal de datos según el sistema."""
-    if sys.platform.startswith("win"):
-        base_dir = Path(os.path.dirname(os.path.abspath(sys.argv[0])))
-        return base_dir / "data"
+def get_portable_base_dir():
+    if getattr(sys, "frozen", False):  
+        return Path(sys.executable).resolve().parent
     else:
-        return Path.home() / ".config" / "Clauncher"
+        return Path(__file__).resolve().parent
 
-DATA_DIR = get_data_dir()
+BASE_DIR = get_portable_base_dir()
+
+DATA_DIR = BASE_DIR / "data"
 ICONS_CACHE_DIR = DATA_DIR / "icons_cache"
 ICONS = DATA_DIR / "icons"
 
@@ -26,9 +26,10 @@ ICONS.mkdir(parents=True, exist_ok=True)
 # ------------------------------
 # Archivos locales
 # ------------------------------
-CONFIG_FILE = DATA_DIR / "config.json"
+CONFIG_FILE = DATA_DIR / "config.db"
 NOTES_FILE = DATA_DIR / "notas.json"
 FLAG_FILE = DATA_DIR / "notify_update.flag"
+UPDATE_UI = DATA_DIR / "update_ui.json"
 
 # ------------------------------
 # Archivos para Google Drive
@@ -42,12 +43,13 @@ TEMP_PATH = DATA_DIR / BACKUP_FILE_NAME
 # ------------------------------
 # Cargar configuración y notas
 # ------------------------------
-db = JsonDatabase(CONFIG_FILE)
+db = SQLiteDatabase(CONFIG_FILE)
 notes_db = JsonDatabase(NOTES_FILE)
+update_db = JsonDatabase(UPDATE_UI)
 
 db.ensure("global.cloud_sync_enabled", False)
 db.ensure("global.email", None)
-db.ensure("global.allow_multiple_games", False)
+db.ensure("global.allow_multiple_games", True)
 db.ensure("global.tab_order", [])
 db.ensure("global.last_selected_tab", None)
 db.ensure("global.actual_sessions", {})

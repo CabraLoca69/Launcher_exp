@@ -510,7 +510,6 @@ class GamePlatformFrame(ttk.Frame):
             return 
         
         else:
-            # Clic fuera de cualquier ítem → prevenimos selección
             game_tree.selection_remove(game_tree.selection())
             self.show_favorites()
             return None  # Esto cancela el comportamiento por defecto
@@ -893,7 +892,7 @@ class GamePlatformFrame(ttk.Frame):
             logging.info(f"Error intentando actualizar ui: {e}")
            
     def open_notes_window(self, game_name):
-        NotesWindow(self, game_name, notes_db)
+        NotesWindow(self, game_name)
 
     def show_menu(self, game_name, x_root , y_root, btn_props):
         platform_name = self.platform_name
@@ -938,14 +937,13 @@ class GameDetailsPanel(tb.Frame):
     
     def show_game_details(self):
         self.clean_info()
-        game_tree = self.launcher_controller.game_tree
-        
+
         # Datos
         times_for_pc = db.get_children(f"{self.platform_name}.game_total_times.{self.game_name}")
         total_time = 0.0
         for pcids, times in times_for_pc.items():
             total_time += times
-        sessions = db.get(f"{self.platform_name}.game_times.{self.game_name}")
+        sessions = db.get(f"{self.platform_name}.game_times.{self.game_name}", default= [])
 
         # === Barra superior ===
         top_bar = tb.Frame(self, padding=5)
@@ -985,6 +983,7 @@ class GameDetailsPanel(tb.Frame):
         if not sessions:
             tk.Label(info_frame, text="No hay sesiones registradas").pack(anchor="w", padx=20)
         else:
+            sessions = reversed(sessions)
             for session in sessions:
                 total_time = session['Tiempo']
                 hours = int(total_time // 60)
@@ -1008,7 +1007,7 @@ class GameDetailsPanel(tb.Frame):
                     frame = tb.Frame(self)
                     frame.pack(fill="x", padx=20, pady=5)
 
-                    icon = get_app_icon(path)  # Función que ya usás para obtener íconos
+                    icon = get_app_icon(path)
                     if icon:
                         icon_label = tk.Label(frame, image=icon)
                         icon_label.image = icon
@@ -1039,47 +1038,45 @@ class GameDetailsPanel(tb.Frame):
         self.launcher_controller.show_menu(self.game_name, x, y, True)
                
 class NotesWindow(tb.Toplevel):
-    def __init__(self, parent, game_name, notes_dict, save_path="notas.json"):
+    def __init__(self, parent, game_name):
         super().__init__(parent)
         self.title(f"Notas - {game_name}")
         self.geometry("600x400")
         self.resizable(True, True)
         self.open = True
-
         set_window_icon(self, "sort_apps.ico")
 
         self.game_name = game_name
-        self.notes_dict = notes_dict
-        self.save_path = save_path
-
-        # === Estilo general ===
-        self.configure(padx=10, pady=10)
         
-        # === TextArea con Scrollbar ===
-        self.text_area = tk.Text(self, wrap="word", font=("Segoe UI", 11), relief="solid", bd=1)
+        self.configure(padx=10, pady=10)
+
+        self.text_area = tk.Text(
+            self, wrap="word",
+            font=("Segoe UI", 11),
+            relief="solid", bd=1
+        )
         self.text_area.pack(fill="both", expand=True, padx=5, pady=(0, 10))
 
-        # Cargar notas previas
-        nota_existente = self.notes_dict.get(self.game_name, "")
+        nota_existente = notes_db.get(self.game_name, default= "")
         self.text_area.insert("1.0", nota_existente)
-        
-        safe_thread(self.periodic_save)
+
+        self.after(5000, self.periodic_save)
+
         self.protocol("WM_DELETE_WINDOW", self.save_and_close)
 
     def save_and_close(self):
-        texto = self.text_area.get("1.0", "end").strip()
-        self.notes_dict.set(self.game_name, texto)
         self.open = False
-        self.save_notes()
+        self.save_note()
         self.destroy()
-    
+
     def periodic_save(self):
-        if open:
-           self.save_notes()
-           self.after(10000, self.periodic_save)
-        
-    def save_notes(self):
-        notes_db.save()
+        if self.open:
+            self.save_note()
+            self.after(10000, self.periodic_save)
+
+    def save_note(self):
+        texto = self.text_area.get("1.0", "end").strip()
+        notes_db.set(self.game_name, texto)                   
 
 class PropertiesWindow(custommenus.AutoCloseFrame):
     def __init__(self, parent, platform_name, game_tree, on_update_callback=None, on_update_tab=None ):

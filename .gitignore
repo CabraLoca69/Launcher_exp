@@ -1,6 +1,6 @@
 dist/
 data/icons_cache
-data/config.db
+data/databases/
 data/machine_id.txt
 __pycache__
 upload_err.txt

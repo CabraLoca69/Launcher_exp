@@ -12,7 +12,7 @@ from tkinter import filedialog
 from machine_id import get_machine_id
 from cloudsync import call_upload
 from icon_utils import get_app_icon, load_icon
-from datafiles import ICONS, FLAG_FILE, db, update_db
+from datafiles import ICONS, FLAG_FILE, db
 
 class Loader:
     def __init__(self):
@@ -289,7 +289,7 @@ class GameLauncherController:
 
             sessions_list = sessions_list[-5:]
             db.set(base,sessions_list)
-            update_db.ensure(platform_name, game_name)
+            db.ensure(f"global.update_ui.{platform_name}", game_name)
 
             self.already_saved.pop(game_name, None)
 
@@ -301,17 +301,17 @@ class GameLauncherController:
         while True:
             time.sleep(4)
 
-            for platform, ui in list(self.ui_registry.items()):
-                game_name = update_db.get(platform)
+            for platform_name, ui in list(self.ui_registry.items()):
+                game_name = db.get(f"global.update_ui.{platform_name}")
                 if not game_name:
                     continue
 
-                update_db.delete(platform)
+                db.delete(f"global.update_ui.{platform_name}")
 
                 try:
-                    ui.update_on_close(game_name, platform)
+                    ui.update_on_close(game_name, platform_name)
                 except Exception as e:
-                    logging.error(f"Error updating UI for {platform}: {e}")
+                    logging.error(f"Error updating UI for {platform_name}: {e}")
 
     def register_ui(self, platform, ui_instance):
         self.ui_registry[platform] = ui_instance

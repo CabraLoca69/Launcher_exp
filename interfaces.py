@@ -482,6 +482,7 @@ class GamePlatformFrame(ttk.Frame):
         self.game_tree.grid(row=1, column=0, padx=(10, 5), pady=10, sticky="nsw")       
         # armar la forma de los favoritos
         # separar por mes?
+
         # Panel de contenido a la derecha
         self.game_info_panel = tb.Frame(self, relief="ridge", padding=10)
         self.game_info_panel.grid(row=0, column=1, rowspan=2, padx=(5, 10), pady=10, sticky="nsew")
@@ -798,6 +799,7 @@ class GamePlatformFrame(ttk.Frame):
             if not item_id:
                 logging.warning(f"No se encontró el item del juego {game_name} tras update")
                 return
+            self.game_tree.selection_set(item_id)
             self.show_game_details(game_name, item_id)
 
     def find_item_id_for_game(self, tree, game_name):

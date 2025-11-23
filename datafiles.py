@@ -28,8 +28,6 @@ ICONS.mkdir(parents=True, exist_ok=True)
 # ------------------------------
 CONFIG_FILE = DATA_DIR / "config.db"
 NOTES_FILE = DATA_DIR / "notas.json"
-FLAG_FILE = DATA_DIR / "notify_update.flag"
-UPDATE_UI = DATA_DIR / "update_ui.json"
 
 # ------------------------------
 # Archivos para Google Drive
@@ -45,7 +43,6 @@ TEMP_PATH = DATA_DIR / BACKUP_FILE_NAME
 # ------------------------------
 db = SQLiteDatabase(CONFIG_FILE)
 notes_db = JsonDatabase(NOTES_FILE)
-update_db = JsonDatabase(UPDATE_UI)
 
 db.ensure("global.cloud_sync_enabled", False)
 db.ensure("global.email", None)

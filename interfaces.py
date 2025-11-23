@@ -19,7 +19,7 @@ from icon_utils import set_window_icon, load_icon, get_app_icon
 from custommenus import ConfirmDialog
 from cloudsync import get_drive_service, call_merge
 from helpers import Loader, GameLauncherController, reload_in_thread, collect_platform_data
-from datafiles import DATA_DIR, ICONS_CACHE_DIR, ICONS, CONFIG_FILE, FLAG_FILE, db, notes_db
+from datafiles import DATA_DIR, ICONS_CACHE_DIR, ICONS, CONFIG_FILE, db, notes_db
 
 if sys.platform.startswith("win"):
     import win32com.client
@@ -85,16 +85,15 @@ class LauncherUI:
 
     def monitor_sessions(self):
         def loop():
+            last_seen = 0
             while True:
-                if os.path.exists(FLAG_FILE):
-                    try:
-                        os.remove(FLAG_FILE)  # Se procesa una sola vez
-                        
-                        # Actualizar visualmente
-                        self.restore_sessions()
-                    except Exception as e:
-                        print(f"Error al manejar el archivo de aviso: {e}")
-                time.sleep(5)
+                ts = db.get("global.update_timestamp", 0)
+                if ts > last_seen:
+                    last_seen = ts
+                    self.restore_sessions()
+
+                time.sleep(1)
+
         safe_thread(loop)
 
     def restore_sessions(self):

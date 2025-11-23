@@ -12,7 +12,7 @@ from tkinter import filedialog
 from machine_id import get_machine_id
 from cloudsync import call_upload
 from icon_utils import get_app_icon, load_icon
-from datafiles import ICONS, FLAG_FILE, db
+from datafiles import ICONS, db
 
 class Loader:
     def __init__(self):
@@ -194,8 +194,7 @@ class GameLauncherController:
             db.set(f"global.actual_sessions.{game_name}",{"pid": pid,"start_time": start_dt.isoformat(),}) 
             db.set(f"global.actual_running.{game_name}", {"pid": pid})
             
-            with open(FLAG_FILE, "w") as f:
-                f.write("1")
+            db.set("global.update_timestamp", time.time())
 
             # ---------------------------
             # Periodic saver + finalización
@@ -299,7 +298,7 @@ class GameLauncherController:
 
     def update_watcher(self):
         while True:
-            time.sleep(4)
+            time.sleep(2)
 
             for platform_name, ui in list(self.ui_registry.items()):
                 game_name = db.get(f"global.update_ui.{platform_name}")

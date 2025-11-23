@@ -1,5 +1,4 @@
 import uuid
-from pathlib import Path
 import datafiles 
 
 MACHINE_ID_FILE = datafiles.DATA_DIR / "machine_id.txt"

@@ -51,7 +51,6 @@ class Loader:
         ]
         ]
 
-        db.ensure(f"{platform_name}.game_list", {})
         folders = db.get(f"{platform_name}.platform_folders", [])
 
         for path in folders:
@@ -334,8 +333,8 @@ def safe_askdirectory():
             raise
 
 def clean_orphaned_sessions():
-    actual_running = db.get("global.actual_running", {}) or {}
-    actual_sessions = db.get("global.actual_sessions", {}) or {}
+    actual_running = db.get_children("global.actual_running") or {}
+    actual_sessions = db.get_children("global.actual_sessions") or {}
 
     # Filtrar solo los que sigan vivos
     alive_running = {}

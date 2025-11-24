@@ -943,6 +943,9 @@ class GameDetailsPanel(tb.Frame):
         total_time = 0.0
         for pcids, times in times_for_pc.items():
             total_time += times
+        
+        formatted_time = f" - {round(total_time/60, 2)} horas"
+
         sessions = db.get(f"{self.platform_name}.game_times.{self.game_name}", default= [])
 
         # === Barra superior ===
@@ -952,8 +955,6 @@ class GameDetailsPanel(tb.Frame):
         # Botón "Jugar"
         tb.Button(top_bar, text="▶ Jugar", bootstyle="success-outline", width=12,
                   command=lambda : self.launch_game(self.game_name)).pack(side="left", padx=5, pady=5)
-
-        formatted_time = f" - {round(total_time/60, 2)} horas"
 
         game_name_label = tk.Label(top_bar, text=f" {self.game_name}{formatted_time}",
                                    font=("Arial", 12, "bold"), image=self.icon, compound="left")
@@ -1003,6 +1004,14 @@ class GameDetailsPanel(tb.Frame):
             for game_name in favorites:
                 path = game_list.get(game_name)
                 if path:
+                    #calculo de horas totales
+                    times_for_pc = db.get_children(f"{self.platform_name}.game_total_times.{self.game_name}")
+                    total_time = 0.0
+                    for pcids, times in times_for_pc.items():
+                        total_time += times
+                    
+                    formatted_time = f"{round(total_time/60, 2)} horas "
+
                     # Pequeña fila con ícono + nombre
                     frame = tb.Frame(self)
                     frame.pack(fill="x", padx=20, pady=5)
@@ -1014,10 +1023,12 @@ class GameDetailsPanel(tb.Frame):
                         icon_label.pack(side="left", padx=5)
 
                     tk.Label(frame, text=game_name, font=("Arial", 11)).pack(side="left", padx=5)
+                    
 
                     # Botón rápido de jugar
                     tb.Button(frame, text="▶", width=3, bootstyle="success-outline",
                             command= lambda: self.launch_game(game_name)).pack(side="right")
+                    tk.Label(frame, text=formatted_time, font=("Arial", 11)).pack(side="right", padx=5)
                     
     def clean_info(self):
         for widget in self.winfo_children():

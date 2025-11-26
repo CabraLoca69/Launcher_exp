@@ -1005,10 +1005,11 @@ class GameDetailsPanel(tb.Frame):
                 path = game_list.get(game_name)
                 if path:
                     #calculo de horas totales
-                    times_for_pc = db.get_children(f"{self.platform_name}.game_total_times.{self.game_name}")
+                    times_for_pc = db.get_children(f"{self.platform_name}.game_total_times.{game_name}")
                     total_time = 0.0
                     for pcids, times in times_for_pc.items():
                         total_time += times
+        
                     
                     formatted_time = f"{round(total_time/60, 2)} horas "
 

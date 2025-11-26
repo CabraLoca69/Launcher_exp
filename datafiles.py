@@ -40,7 +40,6 @@ TOKEN_PATH = CLOUD / "token.json"
 CREDENTIALS_PATH = CLOUD / "credentials.json"
 DRIVE_FOLDER_NAME = "GameLauncherData"
 BACKUP_FILE_NAME = "playtime_backup.json"
-TEMP_PATH = CLOUD /BACKUP_FILE_NAME
 
 # ------------------------------
 # Cargar configuración y notas

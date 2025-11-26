@@ -336,7 +336,6 @@ def clean_orphaned_sessions():
     actual_running = db.get_children("global.actual_running") or {}
     actual_sessions = db.get_children("global.actual_sessions") or {}
 
-    # Filtrar solo los que sigan vivos
     alive_running = {}
     alive_sessions = {}
 
@@ -347,9 +346,16 @@ def clean_orphaned_sessions():
             if game_name in actual_sessions:
                 alive_sessions[game_name] = actual_sessions[game_name]
 
-    # Reemplazar ramas completas de una sola vez
-    db.set("global.actual_running", alive_running)
-    db.set("global.actual_sessions", alive_sessions)
+    # Primero borrar todas las claves viejas
+    db.delete_prefix("global.actual_running")
+    db.delete_prefix("global.actual_sessions")
+
+    # Volver a crear las ramas desde cero
+    for game_name, info in alive_running.items():
+        db.set(f"global.actual_running.{game_name}", info)
+
+    for game_name, info in alive_sessions.items():
+        db.set(f"global.actual_sessions.{game_name}", info)
 
 def is_process_running(pid):
     try:

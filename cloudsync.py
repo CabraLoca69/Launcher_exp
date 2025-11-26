@@ -15,7 +15,7 @@ from google.auth.transport.requests import Request
 
 from machine_id import get_machine_id
 from safe_threading import safe_thread
-from datafiles import TOKEN_PATH, CREDENTIALS_PATH, BACKUP_FILE_NAME, DRIVE_FOLDER_NAME, TEMP_PATH, db
+from datafiles import TOKEN_PATH, CREDENTIALS_PATH, BACKUP_FILE_NAME, DRIVE_FOLDER_NAME, db
 
 # Scopes para Drive (sólo archivos de app)
 SCOPES = [

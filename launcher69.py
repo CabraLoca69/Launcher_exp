@@ -20,3 +20,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# la interfaz no se actualiza cada 5 mins
+# revisar si sigue creando mal global.actual_running

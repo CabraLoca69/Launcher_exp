@@ -758,7 +758,6 @@ class GamePlatformFrame(ttk.Frame):
         if exe:
             exe_name = os.path.splitext(os.path.basename(exe))[0]
             
-            db.ensure(f"{platform_name}.game_list", {})
             db.set(f"{platform_name}.game_list.{exe_name}", exe)
 
             call_populate(platform_name, self.game_tree)

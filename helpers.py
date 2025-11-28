@@ -228,8 +228,9 @@ class GameLauncherController:
         pcid = get_machine_id()
 
         with db.lock:
+            base = f"{platform_name}.game_times.{game_name}"
             # --- GAME TIMES (sessions)
-            sessions_list = db.get(f"{platform_name}.game_times.{game_name}", default= [])
+            sessions_list = db.get(base, default= [])
 
             if sessions_list and sessions_list[-1]["Start"] == now:
                 sessions_list[-1]["Tiempo"] = round(dur_min, 2)
@@ -240,9 +241,7 @@ class GameLauncherController:
             sessions_list = sessions_list[-5:]
 
             # Guardar como claves child
-            base = f"{platform_name}.game_times.{game_name}"
-            for idx, sess in enumerate(sessions_list):
-                db.set(f"{base}.{idx}", sess)
+            db.set(base, sessions_list)
 
             # --- TOTAL TIMES POR PC
             current_total = db.get(f"{platform_name}.game_total_times.{game_name}.{pcid}", 0.0)
@@ -351,11 +350,11 @@ def clean_orphaned_sessions():
     db.delete_prefix("global.actual_sessions")
 
     # Volver a crear las ramas desde cero
-    for game_name, info in alive_running.items():
-        db.set(f"global.actual_running.{game_name}", info)
-
     for game_name, info in alive_sessions.items():
         db.set(f"global.actual_sessions.{game_name}", info)
+
+    for game_name, info in alive_running.items():
+        db.set(f"global.actual_running.{game_name}", info)
 
 def is_process_running(pid):
     try:

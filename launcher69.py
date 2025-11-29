@@ -1,6 +1,6 @@
 import sys
 from cloudsync import call_merge
-from interfaces import LauncherUI
+from interfaces import LauncherUI, update_ui
 from datafiles import db
 from helpers import GameLauncherController
 
@@ -12,7 +12,10 @@ def main():
             
     else:
         if db.get("global.cloud_sync_enabled"):
-            call_merge()
+            def call_update(data):
+                update_ui(launcherui)
+            
+            call_merge(callback= call_update)
 
         launcher_controler = GameLauncherController()
         launcherui = LauncherUI() 
@@ -20,7 +23,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-# la interfaz no se actualiza cada 5 mins
-# revisar si sigue creando mal global.actual_running

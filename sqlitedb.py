@@ -3,6 +3,8 @@ import json
 import threading
 from typing import Any, Union, List
 
+import traceback
+
 class SQLiteDatabase:
     def __init__(self, file_path: str):
         self.conn = sqlite3.connect(file_path, check_same_thread=False)
@@ -57,6 +59,12 @@ class SQLiteDatabase:
                 (key, value_json)
             )
             self.conn.commit()
+
+    #eso es el debug de set, activarlo para ver quien escrible en la db
+    """def set(self, key, value):
+        print(f"\n[DEBUG] set(): key={key}")
+        traceback.print_stack()
+        self._set_db(key, value)"""
 
     def delete(self, keypath: Union[str, List[str]]):
         key = self._resolve_path(keypath)

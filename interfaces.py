@@ -267,6 +267,7 @@ class DraggableNotebook(tb.Notebook):
         self.active_popup= None
         self.input = False
         self.FAVORITE_LIMIT = 5
+        self.platform_frames = {}
         self.platform_trees = {}
         self.loader = Loader()
         self.default_icon= load_icon(os.path.join(ICONS, "no_icon.ico"), size=(16,16))
@@ -885,8 +886,14 @@ class GamePlatformFrame(ttk.Frame):
         try:
             self.clean_info()
             details_panel = GameDetailsPanel(self.details_frame, self.platform_name, game_name, item_id, launcher_controller=self)
-            details_panel.show_game_details()
+            
+            try:
+                details_panel.show_game_details(game_name)
+            except Exception as e:
+                logging.error(f"error mostrando detalles : {e}")
+
             details_panel.pack(fill="both", expand=True)
+            
         except Exception as e:
             logging.info(f"Error intentando actualizar ui: {e}")
            
@@ -927,6 +934,11 @@ class GameDetailsPanel(tb.Frame):
         self.game_name = game_name
         self.item_id = item_id
         self.launcher_controller = launcher_controller #esto es una instancia de GamePlatformFrame, concretamente el "padre" (el que la crea)
+        self.current_game_displayed = None
+        self.stop_watcher = True
+        self.sessions_frame = None
+        self.bind("<Destroy>", self.stop_session_watcher)
+        
         
         ico_path = os.path.join(ICONS_CACHE_DIR, f"{self.game_name}.ico")
         if os.path.exists(ico_path):
@@ -934,62 +946,102 @@ class GameDetailsPanel(tb.Frame):
         else:
             self.icon = get_app_icon(os.path.join(ICONS, "no_icon.ico"))
     
-    def show_game_details(self):
-        self.clean_info()
-
-        # Datos
-        times_for_pc = db.get_children(f"{self.platform_name}.game_total_times.{self.game_name}")
-        total_time = 0.0
-        for pcids, times in times_for_pc.items():
-            total_time += times
+    def show_game_details(self, game_name):
+        self.game_name = game_name
+        self.current_game_displayed = game_name
         
+
+        # Datos de tiempo total
+        times_for_pc = db.get_children(f"{self.platform_name}.game_total_times.{self.game_name}")
+        total_time = sum(times_for_pc.values())
         formatted_time = f" - {round(total_time/60, 2)} horas"
 
-        sessions = db.get(f"{self.platform_name}.game_times.{self.game_name}", default= [])
+        sessions = db.get(f"{self.platform_name}.game_times.{self.game_name}", default=[])
 
         # === Barra superior ===
         top_bar = tb.Frame(self, padding=5)
         top_bar.pack(fill="x", pady=(0, 10))
 
-        # Botón "Jugar"
         tb.Button(top_bar, text="▶ Jugar", bootstyle="success-outline", width=12,
-                  command=lambda : self.launch_game(self.game_name)).pack(side="left", padx=5, pady=5)
+                command=lambda: self.launch_game(self.game_name)).pack(side="left", padx=5, pady=5)
 
-        game_name_label = tk.Label(top_bar, text=f" {self.game_name}{formatted_time}",
-                                   font=("Arial", 12, "bold"), image=self.icon, compound="left")
-        game_name_label.image = self.icon
-        game_name_label.pack(side="left", padx=10)
+        self.game_name_label = tk.Label(top_bar, text=f" {self.game_name}{formatted_time}",
+                                font=("Arial", 12, "bold"), image=self.icon, compound="left")
+        self.game_name_label.image = self.icon
+        self.game_name_label.pack(side="left", padx=10)
 
-        # Botones derecha
+        # === Botones derecha ===
         right_buttons = tb.Frame(top_bar)
         right_buttons.pack(side="right", padx=5)
 
-        btn_props = tb.Button(right_buttons, text="⚙", width=4, bootstyle="info-outline",
-                              command=self.show_props_menu)
-        btn_fav = tb.Button(right_buttons, text="★", width=4, bootstyle="warning-outline",
-                            command=self.toggle_favorite)
-        btn_extra = tb.Button(right_buttons, text="⋯", width=4, bootstyle="info-outline",
-                              command=self.open_notes)
+        tb.Button(right_buttons, text="⚙", width=4, bootstyle="info-outline",
+                command=self.show_props_menu).pack(side="right", padx=2)
+        tb.Button(right_buttons, text="★", width=4, bootstyle="warning-outline",
+                command=self.toggle_favorite).pack(side="right", padx=2)
+        tb.Button(right_buttons, text="⋯", width=4, bootstyle="info-outline",
+                command=self.open_notes).pack(side="right", padx=2)
 
-        for btn in (btn_props, btn_fav, btn_extra):
-            btn.pack(side="right", padx=2)
-
-        # === Info sesiones ===
+        # === Sesiones ===
         info_frame = tk.Frame(self)
         info_frame.pack(fill="both", expand=True)
 
         tk.Label(info_frame, text="Últimas sesiones:", font=("Arial", 12, "bold")).pack(anchor="w", padx=10, pady=(10, 0))
 
+        # Frame dedicado SOLO a sesiones
+        self.sessions_frame = tk.Frame(info_frame)
+        self.sessions_frame.pack(fill="x", padx=20, pady=(5, 0))
+
+        # Primera carga
+        self.update_sessions_block()
+
+        # Iniciar watcher
+        self.start_session_watcher()
+
+    def update_sessions_block(self):
+        # Si ya se cambió de juego, no actualizar
+        if self.current_game_displayed != self.game_name:
+            return
+
+        # Limpiar frame sin destruir todo
+        for child in self.sessions_frame.winfo_children():
+            child.destroy()
+        
+        # Datos de tiempo total
+        times_for_pc = db.get_children(f"{self.platform_name}.game_total_times.{self.game_name}")
+        total_time = sum(times_for_pc.values())
+        formatted_time = f" - {round(total_time/60, 2)} horas"
+
+        self.game_name_label.config(text=f" {self.game_name}{formatted_time}")
+
+        sessions = db.get(f"{self.platform_name}.game_times.{self.game_name}", default=[])
+
         if not sessions:
-            tk.Label(info_frame, text="No hay sesiones registradas").pack(anchor="w", padx=20)
-        else:
-            sessions = reversed(sessions)
-            for session in sessions:
-                total_time = session['Tiempo']
-                hours = int(total_time // 60)
-                minutes = int(total_time % 60)
-                formatted_time = f"{hours} horas : {minutes} minutos"
-                tk.Label(info_frame, text=f"{session['Start']} - {formatted_time}").pack(anchor="w", padx=20)
+            tk.Label(self.sessions_frame, text="No hay sesiones registradas").pack(anchor="w")
+            return
+
+        # Mostrarlas en orden invertido
+        for session in reversed(sessions):
+            total_time = session['Tiempo']
+            hours = int(total_time // 60)
+            minutes = int(total_time % 60)
+            formatted = f"{hours} horas : {minutes} minutos"
+            tk.Label(self.sessions_frame, text=f"{session['Start']} - {formatted}").pack(anchor="w")
+
+    def start_session_watcher(self):
+        self.stop_watcher = False
+        self._session_watcher_loop()
+
+    def stop_session_watcher(self, event = None):
+        self.stop_watcher = True
+
+    def _session_watcher_loop(self):
+        if self.stop_watcher:
+            return
+
+        self.update_sessions_block()
+
+        # Actualizar cada 1 segundo (suficiente para notar cambios suaves)
+        self.after(1000, self._session_watcher_loop)
 
     def show_favorites(self):
         tk.Label(self, text="★ Tus Favoritos ★", font=("Arial", 14, "bold")).pack(pady=10)
@@ -1031,8 +1083,15 @@ class GameDetailsPanel(tb.Frame):
                     tk.Label(frame, text=formatted_time, font=("Arial", 11)).pack(side="right", padx=5)
                     
     def clean_info(self):
+        self.stop_session_watcher()
         for widget in self.winfo_children():
             widget.destroy()
+    #puedo usar esto si quiero mostrar las horas jugadas como hh:mm
+    def format_playtime(minutes):
+        total_min = int(minutes)
+        hours = total_min // 60
+        mins = total_min % 60
+        return f"{hours}:{mins:02d}"
 
     def launch_game(self, game_name):
         GameLauncherController().launch_game(game_name)
@@ -1432,7 +1491,44 @@ class CloudSettingsWindow(custommenus.AutoCloseFrame):
         user_info = service.userinfo().get().execute()
         return user_info.get("email", "desconocido")
 
-    
+def update_ui(target):
+    notebook = target.app.notebook
+
+    def call(all_data):
+        sel_tree = None
+        sel_id = None
+        sel_platform = None
+
+        for platform, tree in notebook.platform_trees.items():
+            selection = tree.selection()
+            if selection:
+                sel_tree = tree
+                sel_id = selection[0]
+                sel_platform = platform
+                break
+
+        populate_ui(all_data, notebook, False)
+
+        original_sel = sel_id
+
+        def restore_selection():
+            # si el usuario cambió la selección mientras tanto → no tocar nada
+            current_sel = sel_tree.selection()
+            if current_sel and current_sel[0] != original_sel:
+                return  # usuario ganó, no forzar la restauración
+
+            # restaurar si corresponde
+            if original_sel in sel_tree.get_children():
+                sel_tree.selection_set(original_sel)
+                pf = notebook.platform_frames[sel_platform]
+                # ojo aca se puede romper si toqueteamos la forma en la que se pone el id al objeto en el tree, esto deberia ser (game_name, item_id) por ahora coinciden 28/11/25
+                pf.show_game_details(original_sel, original_sel)
+
+        if sel_id is not None:
+            notebook.after(0, restore_selection)
+
+    reload_in_thread(target, call)
+
 def call_populate(platform_name, target):
     def worker():
         all_data = [collect_platform_data(platform_name)]
@@ -1503,6 +1599,7 @@ def populate_ui(all_data, target, select_new= True):
                 platform_frame = GamePlatformFrame(target, platform_name)
                 target.add(platform_frame, text=platform_name)
                 target.platform_trees[platform_name] = platform_frame.game_tree
+                target.platform_frames[platform_name] = platform_frame
                 tree = platform_frame.game_tree
                 if select_new:
                     target.select(platform_frame)

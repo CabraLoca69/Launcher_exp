@@ -183,6 +183,7 @@ class GameLauncherController:
             platform_name, game_path = resolve_game(game_name)
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             start_time = time.time()
+            last_update_time = start_time
             start_dt = datetime.now()
 
             # 🔹 Aquí usamos la capa modular
@@ -201,12 +202,16 @@ class GameLauncherController:
             running = True
             def periodic_saver():
                 nonlocal running
+                nonlocal last_update_time
                 while running:
-                    time.sleep(300)
+                    time.sleep(60)
                     if not running:
+                        if db.get("global.cloud_sync_enabled", default=False):
+                            call_upload()
                         break
-
-                    self._save_playtime(platform_name, game_name, start_time, now)
+                    if db.get("global.cloud_sync_enabled", default=False):
+                        call_upload()
+                    last_update_time = self._save_playtime(platform_name, game_name, start_time, last_update_time, now)
 
             safe_thread(periodic_saver)
 
@@ -217,78 +222,80 @@ class GameLauncherController:
                     running = False
                     db.delete(f"global.actual_running.{game_name}")
                     db.delete(f"global.actual_sessions.{game_name}")
-                    self._finalize_playtime(platform_name, game_name, start_time, now)                    
+                    self._finalize_playtime(platform_name, game_name, start_time, last_update_time, now)                    
                     
         if db.get(f"global.actual_running.{game_name}") is None:
             safe_thread(execute, daemon= False)
 
 # Helpers de guardado de tiempos
-    def _save_playtime(self, platform_name, game_name, start_time, now):
-        dur_min = (time.time() - start_time) / 60
+    def _save_playtime(self, platform_name, game_name, start_time, last_update_time, now):
         pcid = get_machine_id()
+        current_time = time.time()
+
+        # Diferencia exacta en minutos desde la última actualización
+        diff = (current_time - last_update_time) / 60  
+
+        if diff <= 0:
+            return last_update_time  # No sumes nada raro
 
         with db.lock:
+            # --- ACTUALIZAR TOTAL POR PC ---
+            base_total = f"{platform_name}.game_total_times.{game_name}.{pcid}"
+            current_total = db.get(base_total, 0.0)
+            new_total = round(current_total + diff, 2)
+            db.set(base_total, new_total)
+
+            # --- ACTUALIZAR SESSIONS (UI) ---
             base = f"{platform_name}.game_times.{game_name}"
-            # --- GAME TIMES (sessions)
-            sessions_list = db.get(base, default= [])
+
+            sessions_list = db.get(base, default=[])
+            dur_min = (current_time - start_time) / 60  # tiempo total de la sesion
 
             if sessions_list and sessions_list[-1]["Start"] == now:
                 sessions_list[-1]["Tiempo"] = round(dur_min, 2)
             else:
                 sessions_list.append({"Start": now, "Tiempo": round(dur_min, 2)})
 
-            # Solo los últimos 5
             sessions_list = sessions_list[-5:]
-
-            # Guardar como claves child
             db.set(base, sessions_list)
-
-            # --- TOTAL TIMES POR PC
-            current_total = db.get(f"{platform_name}.game_total_times.{game_name}.{pcid}", 0.0)
-
-            new_total = round(current_total + dur_min, 2)
-            db.set(f"{platform_name}.game_total_times.{game_name}.{pcid}", new_total)
 
         self.already_saved[game_name] = True
 
-    if db.get("global.cloud_sync_enabled", default=False):
-        time.sleep(2)
-        call_upload()
+        return current_time
 
-    def _finalize_playtime(self, platform_name, game_name, start_time, now):
-        dur_min = (time.time() - start_time) / 60
+    def _finalize_playtime(self, platform_name, game_name, start_time, last_update_time, now):
         pcid = get_machine_id()
+        end_time = time.time()
+
+        # Minutos finales desde el último save
+        diff = (end_time - last_update_time) / 60
 
         with db.lock:
+            base_total = f"{platform_name}.game_total_times.{game_name}.{pcid}"
+            current_total = db.get(base_total, 0.0)
+
+            if diff > 0:
+                current_total += diff
+
+            db.set(base_total, round(current_total, 2))
+
+            # --- Sessions UI ---
             base = f"{platform_name}.game_times.{game_name}"
+            sessions_list = db.get(base, default=[])
 
-            # Sessions
-            sessions_list = db.get(base, default= [])
-            current_total = db.get(f"{platform_name}.game_total_times.{game_name}.{pcid}", 0.0)
+            dur_min = (end_time - start_time) / 60
 
-            # Ajuste según si hubo guardado previo
-            if self.already_saved.get(game_name, False):
-                last_time = sessions_list[-1]["Tiempo"] if sessions_list else 0
-                diff = dur_min - last_time
-                if diff > 0:
-                    current_total += diff
-            else:
-                current_total += dur_min
-
-            # Guardar totales
-            db.set(f"{platform_name}.game_total_times.{game_name}.{pcid}", round(current_total, 2))
-
-            # Actualizar sesión final
             if sessions_list and sessions_list[-1]["Start"] == now:
                 sessions_list[-1]["Tiempo"] = round(dur_min, 2)
             else:
                 sessions_list.append({"Start": now, "Tiempo": round(dur_min, 2)})
 
             sessions_list = sessions_list[-5:]
-            db.set(base,sessions_list)
-            db.ensure(f"global.update_ui.{platform_name}", game_name)
+            db.set(base, sessions_list)
 
-            self.already_saved.pop(game_name, None)
+            db.set(f"global.update_ui.{platform_name}", game_name)
+
+        self.already_saved.pop(game_name, None)
 
         if db.get("global.cloud_sync_enabled", default=False):
             time.sleep(2)

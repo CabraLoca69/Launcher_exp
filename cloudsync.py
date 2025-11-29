@@ -83,12 +83,14 @@ def get_or_create_folder(service):
 # -------------------------
 # Flatten / Rebuild helpers
 # -------------------------
-def flatten_config(nested: Dict[str, Any], prefix: str = "") -> Dict[str, Any]:
+def flatten_config(nested: Dict[str, Any], prefix: str = "", exclude=("global",)) -> Dict[str, Any]:
     out: Dict[str, Any] = {}
     for key, value in nested.items():
+        if key in exclude:
+            continue
         full = f"{prefix}.{key}" if prefix else key
         if isinstance(value, dict):
-            out.update(flatten_config(value, full))
+            out.update(flatten_config(value, full, exclude))
         else:
             out[full] = value
     return out
@@ -213,24 +215,30 @@ def build_cloud_payload_for_upload(existing_cloud_data: Dict[str, Any] = None) -
 
 
 def merge_backup_data(local_nested: Dict[str, Any], cloud_data: Dict[str, Any]) -> Dict[str, Any]:
-    merged = json.loads(json.dumps(local_nested))  # deep copy simple
+    merged = json.loads(json.dumps(local_nested))  # deep copy
 
     cloud_pc_data = cloud_data.get("pc_ids", {}) or {}
+    INVALID_ROOTS = {"global", "settings", "config"}
+
     for cloud_pc, platforms in cloud_pc_data.items():
         for platform, games in platforms.items():
+            
+            # No mezclar nodos internos del launcher
+            if platform.split(".")[0] in INVALID_ROOTS:
+                continue
+
             if not isinstance(games, dict):
                 continue
+
             platform_node = merged.setdefault(platform, {})
             local_game_totals = platform_node.setdefault("game_total_times", {})
 
             for game, time_val in games.items():
                 time_val = float(time_val or 0.0)
-                # obtener dict por pc en local
+
                 local_by_pc = local_game_totals.setdefault(game, {})
-                # si no es dict, migramos valor a dict bajo algún id (compat con historic)
+
                 if not isinstance(local_by_pc, dict):
-                    # si local_by_pc es número, convertirlo a { "<local_pc>": value }
-                    # pero no podemos saber el pc id anterior: lo dejamos como valor en "__legacy"
                     local_game_totals[game] = {"__legacy": float(local_by_pc)}
                     local_by_pc = local_game_totals[game]
 
@@ -238,7 +246,6 @@ def merge_backup_data(local_nested: Dict[str, Any], cloud_data: Dict[str, Any]) 
                 local_by_pc[cloud_pc] = max(prev, time_val)
 
     return merged
-
 
 # -------------------------
 # High level tasks
@@ -269,8 +276,16 @@ def download_and_merge_backup():
         return read_full_config_from_db()
 
 
-def call_merge():
-    safe_thread(download_and_merge_backup)
+def call_merge(callback = None):
+    def worker():
+        merged = download_and_merge_backup()
+        if callback:
+            try:
+                callback(merged)
+            except Exception:
+                logging.exception("Error en callback post-merge:")
+    
+    safe_thread(worker)
 
 
 def call_upload():
@@ -293,10 +308,6 @@ def call_upload():
 
 
 def call_download():
-    """
-    Descarga el backup y lo devuelve (bloqueante).
-    Retorna {} si no hay internet o falla.
-    """
     if not has_internet_http():
         return {}
     try:

@@ -1,4 +1,5 @@
 dist/
+data/icons/*.png
 data/icons_cache
 data/databases/
 data/machine_id.txt

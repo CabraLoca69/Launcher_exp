@@ -1,6 +1,5 @@
 import os
 import logging
-import subprocess
 import threading
 import psutil
 import time
@@ -11,13 +10,16 @@ from datetime import datetime
 from tkinter import filedialog
 from machine_id import get_machine_id
 from cloudsync import call_upload
-from icon_utils import get_app_icon, load_icon
+from icon_utils import load_icon, IconProviderFactory, IconUIAdapter
 from datafiles import ICONS, db
+from switcher import RunnerFactory, ExecutableDetectorFactory
 
 class Loader:
     def __init__(self):
         self.default_icon= load_icon(os.path.join(ICONS, "no_icon.ico"), size=(16,16))
         self.grouped = True
+        #este revisa que tipo de ejecutable tenemos
+        self.executable_detector = ExecutableDetectorFactory.create()
         pass
     
     def add_folder(self, platform_name):  # agrega un directorio a la lista 
@@ -46,9 +48,9 @@ class Loader:
     def scan_for_games(self, platform_name):
         ignore_keywords = [
             kw.lower() for kw in [
-            "vc_redist", "unins", "setup", "install", "dxsetup",
-            "dotnet", "readme", "helper", "support", "launcher", "win64"
-        ]
+                "vc_redist", "unins", "setup", "install", "dxsetup",
+                "dotnet", "readme", "helper", "support", "launcher", "win64"
+            ]
         ]
 
         folders = db.get(f"{platform_name}.platform_folders", [])
@@ -61,7 +63,7 @@ class Loader:
                 for file in files:
                     full_path = os.path.join(root, file)
 
-                    if not self.is_executable(full_path):
+                    if not self.executable_detector.is_executable(full_path):
                         continue
 
                     if any(k in file.lower() for k in ignore_keywords):
@@ -108,50 +110,11 @@ class GameLauncherController:
         self.lock = threading.Lock()
         self.ui_registry = {}
         self.update_thread_running = False
+        #agrego el runner que se encarga de lanzar los programas
+        self.runner = RunnerFactory.create()
 
         GameLauncherController._initalized = True
         
-
-# Helpers de ejecución
-    def _run_windows(self, game_path):
-        """Ejecuta un juego en Windows."""
-        return subprocess.Popen(game_path)
-
-    def _run_linux_native(self, game_path):
-        """Ejecuta un juego nativo en Linux."""
-        return subprocess.Popen([game_path])
-
-    def _run_linux_wine(self, game_path, wineprefix=None):
-        """Ejecuta un juego de Windows en Linux con Wine."""
-        env = os.environ.copy()
-        if wineprefix:
-            env["WINEPREFIX"] = wineprefix
-        else:
-            # Si no hay configurado, usamos el default de Wine (~/.wine)
-            env["WINEPREFIX"] = os.path.expanduser("~/.wine")
-
-        return subprocess.Popen(["wine", game_path], env=env)
-
-    def _needs_wine(self, game_path):
-        """Devuelve True si el juego requiere Wine (por extensión)."""
-        ext = os.path.splitext(game_path)[1].lower()
-        return ext in [".exe", ".bat", ".cmd"]
-
-    def _run_game(self, game_path):
-        """Decide cómo ejecutar el juego según el SO."""
-        if sys.platform.startswith("win"):
-            return self._run_windows(game_path)
-
-        elif sys.platform.startswith("linux"):
-            if self._needs_wine(game_path):
-                wineprefix = db.get("global.wineprefix", os.path.expanduser("~/.wine"))
-                return self._run_linux_wine(game_path, wineprefix)
-            else:
-                return self._run_linux_native(game_path)
-
-        else:
-            raise NotImplementedError(f"SO no soportado: {sys.platform}")
-
 # Lógica principal
     def launch_game(self, game_name):
         def resolve_game(game_name):
@@ -186,8 +149,8 @@ class GameLauncherController:
             last_update_time = start_time
             start_dt = datetime.now()
 
-            # 🔹 Aquí usamos la capa modular
-            process = self._run_game(game_path)
+            # Uso el runner para lanzar el juego (retorna el proceso)
+            process = self.runner.run(game_path)
             pid = process.pid
 
             # Guardar datos iniciales
@@ -402,8 +365,9 @@ def collect_platform_data(platform_name):
     favorites   = db.get_children(f"{platform_name}.favorites")
 
     if grouped:
+        icons = IconUIAdapter(IconProviderFactory.create())
         for name, path in sorted(game_list.items(), key=lambda item: loader.sort_key(item[0], game_times)):
-            game_info = {"name": name, "path": path, "icon": get_app_icon(path) or default_icon}
+            game_info = {"name": name, "path": path, "icon": icons.get_icon(path) or default_icon}
             result["grouped"].append(game_info)
 
     return result

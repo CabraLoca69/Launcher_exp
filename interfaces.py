@@ -15,14 +15,12 @@ from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageTk
 from googleapiclient.discovery import build
 from machine_id import get_machine_id
-from icon_utils import set_window_icon, load_icon, get_app_icon
+from icon_utils import IconUIAdapter, IconProviderFactory, set_window_icon, load_icon
+from switcher import ShortcutFactory
 from custommenus import ConfirmDialog
 from cloudsync import get_drive_service, call_merge
 from helpers import Loader, GameLauncherController, reload_in_thread, collect_platform_data
 from datafiles import DATA_DIR, ICONS_CACHE_DIR, ICONS, CONFIG_FILE, db, notes_db
-
-if sys.platform.startswith("win"):
-    import win32com.client
 
 class SplashFrame(tb.Frame):
     def __init__(self, parent, title="Cargando..."):
@@ -457,7 +455,8 @@ class GamePlatformFrame(ttk.Frame):
         self.img = Image.open(os.path.join(ICONS, f"no_icon.ico")).resize((16, 16), Image.LANCZOS)
         self.default_icon= ImageTk.PhotoImage(self.img)
         self.gamelaunch = GameLauncherController()
-        self.gamelaunch.register_ui(self.platform_name, self)   
+        self.gamelaunch.register_ui(self.platform_name, self)
+        self.shortcut = ShortcutFactory.create()  
         
         self.rowconfigure(0, weight=0)
         self.rowconfigure(1, weight=1)
@@ -559,179 +558,13 @@ class GamePlatformFrame(ttk.Frame):
     def create_direct_access(self, game_name, launcher_path, game_exe_path, destino_desktop=True):
         if hasattr(self, "menu_popup") and self.menu_popup:
             self.menu_popup.destroy()
-        if sys.platform.startswith("win"):
-            return self.create_direct_access_win(game_name, launcher_path, game_exe_path, destino_desktop)
-        else:
-            return self.create_direct_access_linux(game_name, launcher_path, game_exe_path, destino_desktop)
         
-    def create_direct_access_linux(self, game_name, launcher_path, game_exe_path, destino_desktop=True):
-        def get_linux_desktop_dir():
-            xdg_file = Path.home() / ".config" / "user-dirs.dirs"
-
-            if xdg_file.exists():
-                with open(xdg_file, encoding="utf-8") as f:
-                    for line in f:
-                        if line.startswith("XDG_DESKTOP_DIR"):
-                            path = line.split("=")[1].strip().replace('"', "")
-                            # reemplaza $HOME por la ruta real
-                            path = path.replace("$HOME", str(Path.home()))
-                            return os.path.expanduser(path)
-
-            # fallback: si el archivo no existe o no tiene la variable
-            return os.path.expanduser("~/Desktop")
-        
-        platform = self.platform_name
-        desktop_dir = get_linux_desktop_dir() if destino_desktop else os.getcwd()
-        os.makedirs(desktop_dir, exist_ok=True)
-        file_path = os.path.join(desktop_dir, f"{game_name}.desktop")
-        
-        # Asegurar que el icono esté cacheado
-        if os.path.exists(game_exe_path):
-            try:
-                get_app_icon(game_exe_path)  # fuerza caché
-            except Exception as e:
-                print(f"Error extrayendo icono: {e}")
-        
-        # Buscar en el caché si existe
-        cache_icon_path = ICONS_CACHE_DIR / f"{Path(game_exe_path).stem}.png"
-        if cache_icon_path.exists():
-            icon_path = cache_icon_path
-        else:
-            icon_path = Path("/usr/share/pixmaps/default.png")
-        
-        icon_target_dir = Path.home() / ".local/share/icons"
-        icon_target_dir.mkdir(parents=True, exist_ok=True)
-        icon_target = icon_target_dir / f"{game_name.lower().replace(' ', '_')}.png"
-
-        try:
-            if os.path.exists(icon_path):
-                shutil.copy(icon_path, icon_target)
-            else:
-                icon_target = Path("/usr/share/pixmaps/default.png")
-        except Exception as e:
-            print(f"No se pudo copiar el icono: {e}")
-            icon_target = Path("/usr/share/pixmaps/default.png")
-
-        content = f"""[Desktop Entry]
-        Name={game_name}
-        Comment=Lanzador Cl69
-        Exec="{launcher_path}" --launch "{game_name}" --platform "{platform}"
-        Icon={icon_target}
-        Terminal=false
-        Type=Application
-        """
-
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(content)
-
-        # Dar permisos de ejecución al .desktop
-        os.chmod(file_path, 0o755)
-     
-    def create_direct_access_win(self, game_name, launcher_path, game_exe_path, destino_desktop=True):
-        shell = win32com.client.Dispatch("WScript.Shell")
-
-        # Ruta donde se guarda el acceso directo
-        desktop = shell.SpecialFolders("Desktop") if destino_desktop else os.getcwd()
-        acceso_path = os.path.join(
-            desktop,
-            f"{os.path.splitext(game_name)[0]} Cl69.lnk"
-        )
-
-        launcher_dir = os.path.dirname(launcher_path)
-
-        acceso = shell.CreateShortCut(acceso_path)
-        acceso.Targetpath = launcher_path
-        acceso.Arguments = f'--launch "{game_name}"'
-        acceso.WorkingDirectory = launcher_dir  # <-- CORREGIDO
-        acceso.IconLocation = game_exe_path
-        acceso.save()
-
+        return self.shortcut.create_direct_access(game_name, launcher_path, game_exe_path, destino_desktop)
+    
     def create_start_menu_shortcut(self, game_name, game_path, icon_path=None):
         if hasattr(self, "menu_popup") and self.menu_popup:
             self.menu_popup.destroy()
-        system = platform.system()
-        
-        if system == "Windows":
-            try:
-                from win32com.client import Dispatch
-                launcher_exe = Path(sys.executable).resolve() 
-                launcher_dir = launcher_exe.parent
-
-                start_menu = Path(os.getenv("APPDATA")) / "Microsoft" / "Windows" / "Start Menu" / "Programs"
-                shortcut_path = start_menu / f"{game_name}.lnk"
-
-                shell = Dispatch('WScript.Shell')
-                shortcut = shell.CreateShortcut(str(shortcut_path))
-
-                shortcut.TargetPath = str(launcher_exe)
-                shortcut.Arguments = f'--launch "{game_name}"'
-                shortcut.WorkingDirectory = str(launcher_dir) 
-                shortcut.IconLocation = game_path
-                shortcut.save()
-
-                print(f"Acceso directo creado: {shortcut_path}")
-
-            except Exception as e:
-                print(f"Error al crear el acceso directo: {e}")
-
-        elif system == "Linux":
-            # Linux usa archivos .desktop en ~/.local/share/applications
-            desktop_entry_dir = Path.home() / ".local/share/applications"
-            desktop_entry_dir.mkdir(parents=True, exist_ok=True)
-
-            desktop_entry_path = desktop_entry_dir / f"{game_name.lower().replace(' ', '_')}.desktop"
-
-            # Determina el comando (el launcher con argumentos)
-            command = f'"{sys.executable}" "{Path(__file__).resolve()}" --launch "{game_name}"'
-            
-            # Asegurar que el icono esté cacheado
-            if os.path.exists(game_path):
-                try:
-                    get_app_icon(game_path)  # fuerza caché
-                except Exception as e:
-                    print(f"Error extrayendo icono: {e}")
-
-            # Buscar en el caché si existe
-            cache_icon_path = ICONS_CACHE_DIR / f"{Path(game_path).stem}.png"
-            if cache_icon_path.exists():
-                icon_path = cache_icon_path
-            else:
-                icon_path = Path("/usr/share/pixmaps/default.png")
-                
-            # Asegurar que el icono exista y esté en una ubicación estándar (~/.local/share/icons)
-            icon_target_dir = Path.home() / ".local/share/icons"
-            icon_target_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Nombre del icono estandarizado
-            icon_target = icon_target_dir / f"{game_name.lower().replace(' ', '_')}.png"
-            
-            try:
-                # Si el ícono existe, copiarlo al destino (y reemplazar si ya existe)
-                if os.path.exists(icon_path):
-                    shutil.copy(icon_path, icon_target)
-                else:
-                    # Fallback si no hay ícono
-                    icon_target = Path("/usr/share/pixmaps/default.png")
-            except Exception as e:
-                print(f"No se pudo copiar el icono: {e}")
-                icon_target = Path("/usr/share/pixmaps/default.png")
-
-            desktop_entry_content = f"""[Desktop Entry]
-                Type=Application
-                Name={game_name}
-                Exec={command}
-                Icon = {icon_target}
-                Terminal=false
-                Categories=Game;
-                StartupNotify=true
-                """
-
-            desktop_entry_path.write_text(desktop_entry_content)
-            os.chmod(desktop_entry_path, 0o755)
-            print(f"Archivo .desktop creado: {desktop_entry_path}")
-            
-        else:
-            print("Sistema operativo no soportado para accesos directos al inicio.")
+        self.shortcut.create_start_menu_shortcut(game_name, game_path, icon_path)
 
     def launch_game(self): # lanza el ejecutable seleccionado
         if hasattr(self, "menu_popup") and self.menu_popup:
@@ -823,7 +656,8 @@ class GamePlatformFrame(ttk.Frame):
         game_list = db.get_children(f"{platform_name}.game_list")
         for game_name, game_path in game_list.items():
             if search_text in game_name.lower():
-                icon = get_app_icon(game_path) or self.default_icon
+                icons = IconUIAdapter(IconProviderFactory.create())
+                icon = icons.get_icon(game_path) or self.default_icon
                 game_tree.icon_images[game_name] = icon
                 base_name = os.path.splitext(game_name)[0]
                 game_tree.insert("", "end", iid=game_name, text="", image=icon, values=(base_name,))
@@ -944,7 +778,9 @@ class GameDetailsPanel(tb.Frame):
         if os.path.exists(ico_path):
             self.icon = load_icon(ico_path)
         else:
-            self.icon = get_app_icon(os.path.join(ICONS, "no_icon.ico"))
+            icons = IconUIAdapter(IconProviderFactory.create())
+            self.icon = icons.get_icon(os.path.join(ICONS, "no_icon.ico"))
+            
     
     def show_game_details(self, game_name):
         self.game_name = game_name
@@ -1068,7 +904,8 @@ class GameDetailsPanel(tb.Frame):
                     frame = tb.Frame(self)
                     frame.pack(fill="x", padx=20, pady=5)
 
-                    icon = get_app_icon(path)
+                    icons = IconUIAdapter(IconProviderFactory.create())
+                    icon = icons.get_icon(path)
                     if icon:
                         icon_label = tk.Label(frame, image=icon)
                         icon_label.image = icon
@@ -1512,6 +1349,10 @@ def update_ui(target):
         original_sel = sel_id
 
         def restore_selection():
+            # si no hay nada seleccionado, lo deja como esta
+            if not original_sel:
+                return
+            
             # si el usuario cambió la selección mientras tanto → no tocar nada
             current_sel = sel_tree.selection()
             if current_sel and current_sel[0] != original_sel:
@@ -1521,8 +1362,16 @@ def update_ui(target):
             if original_sel in sel_tree.get_children():
                 sel_tree.selection_set(original_sel)
                 pf = notebook.platform_frames[sel_platform]
-                # ojo aca se puede romper si toqueteamos la forma en la que se pone el id al objeto en el tree, esto deberia ser (game_name, item_id) por ahora coinciden 28/11/25
-                pf.show_game_details(original_sel, original_sel)
+                
+                # Obtener el nombre del juego desde el tree (no asumir que ID == nombre)
+                item = sel_tree.item(original_sel)
+                if item and item["values"]:
+                    game_name = item["values"][0]
+                else:
+                    return  # si por algún motivo no hay valores, no hacer nada
+
+                pf.show_game_details(game_name, original_sel)
+
 
         if sel_id is not None:
             notebook.after(0, restore_selection)

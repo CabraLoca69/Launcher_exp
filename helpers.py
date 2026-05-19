@@ -12,14 +12,14 @@ from machine_id import get_machine_id
 from cloudsync import call_upload
 from icon_utils import load_icon, IconProviderFactory, IconUIAdapter
 from datafiles import ICONS, db
-from switcher import RunnerFactory, ExecutableDetectorFactory
+from registered_platforms import CURRENT_OS, PLATFORM_METHODS
 
 class Loader:
     def __init__(self):
         self.default_icon= load_icon(os.path.join(ICONS, "no_icon.ico"), size=(16,16))
         self.grouped = True
         #este revisa que tipo de ejecutable tenemos
-        self.executable_detector = ExecutableDetectorFactory.create()
+        self.executable_detector = PLATFORM_METHODS[CURRENT_OS]["exedetect"]()
         pass
     
     def add_folder(self, platform_name):  # agrega un directorio a la lista 
@@ -111,7 +111,7 @@ class GameLauncherController:
         self.ui_registry = {}
         self.update_thread_running = False
         #agrego el runner que se encarga de lanzar los programas
-        self.runner = RunnerFactory.create()
+        self.runner = PLATFORM_METHODS[CURRENT_OS]["runner"]()
 
         GameLauncherController._initalized = True
         
@@ -179,7 +179,11 @@ class GameLauncherController:
             safe_thread(periodic_saver)
 
             try:
-                process.wait()
+                if psutil.pid_exists(pid):
+                    try:
+                        psutil.Process(pid).wait()
+                    except Exception as e:
+                        print(f"Erro al esperar el proceso {pid} {e}")
             finally:
                 with self.lock:
                     running = False

@@ -16,7 +16,8 @@ from PIL import Image, ImageTk
 from googleapiclient.discovery import build
 from machine_id import get_machine_id
 from icon_utils import IconUIAdapter, IconProviderFactory, set_window_icon, load_icon
-from switcher import ShortcutFactory
+from switcher import ShortcutFactory, MenuFactory
+from registered_platforms import CURRENT_OS, PLATFORM_METHODS
 from custommenus import ConfirmDialog
 from cloudsync import get_drive_service, call_merge
 from helpers import Loader, GameLauncherController, reload_in_thread, collect_platform_data
@@ -456,7 +457,8 @@ class GamePlatformFrame(ttk.Frame):
         self.default_icon= ImageTk.PhotoImage(self.img)
         self.gamelaunch = GameLauncherController()
         self.gamelaunch.register_ui(self.platform_name, self)
-        self.shortcut = ShortcutFactory.create()  
+        self.shortcutcreator = PLATFORM_METHODS[CURRENT_OS]["shortcut"]()  
+        self.menucreator = PLATFORM_METHODS[CURRENT_OS]["menu"]()
         
         self.rowconfigure(0, weight=0)
         self.rowconfigure(1, weight=1)
@@ -559,12 +561,13 @@ class GamePlatformFrame(ttk.Frame):
         if hasattr(self, "menu_popup") and self.menu_popup:
             self.menu_popup.destroy()
         
-        return self.shortcut.create_direct_access(game_name, launcher_path, game_exe_path, destino_desktop)
+        return self.shortcutcreator.create_direct_access(game_name, launcher_path, game_exe_path, destino_desktop)
     
     def create_start_menu_shortcut(self, game_name, game_path, icon_path=None):
         if hasattr(self, "menu_popup") and self.menu_popup:
             self.menu_popup.destroy()
-        self.shortcut.create_start_menu_shortcut(game_name, game_path, icon_path)
+        
+        self.shortcutcreator.create_start_menu_shortcut(game_name, game_path, icon_path)
 
     def launch_game(self): # lanza el ejecutable seleccionado
         if hasattr(self, "menu_popup") and self.menu_popup:
@@ -733,28 +736,33 @@ class GamePlatformFrame(ttk.Frame):
            
     def open_notes_window(self, game_name):
         NotesWindow(self, game_name)
+          
+    def ask_steam_id(self, game_name):
+        def save_steam_id(value):
+            db.set(f"global.steam_ids.{game_name}", value)
+        
+        def input_callback_handler(value):
+            input = False
+            if value:
+                save_steam_id(value)
+
+        def ask_input():
+            input = custommenus.InputDialog(self, prompt="Ingrese Steam ID:", callback=input_callback_handler)
+            if hasattr(self, "menu_popup") and self.menu_popup:
+                self.menu_popup.destroy()
+        
+            input.grid(row=0, column=1)
+
+        ask_input()
 
     def show_menu(self, game_name, x_root , y_root, btn_props):
         platform_name = self.platform_name
         menu = custommenus.CustomPopupMenu(self)
         self.menu_popup = menu
         
-        if game_name:
-            if not btn_props:
-                menu.add_button("▶ Jugar",25 , "success-outline", self.launch_game)
-            
-            menu.add_button("★ Favoritos", 25, "warning-outline", lambda: self.toggle_favorite(game_name))
-            menu.add_button("⤓ Crear acceso directo", 25, "info-outline", lambda: self.create_direct_access(
-                            game_name, os.path.abspath(sys.argv[0]), db.get(f"{platform_name}.game_list.{game_name}"), destino_desktop=True))
-            menu.add_button("📌 Añadir a inicio", 25, "info-outline", lambda: self.create_start_menu_shortcut(game_name, db.get(f"{platform_name}.game_list.{game_name}", ICONS)))
-            menu.add_button("📁 Archivos locales", 25, "info-outline", lambda: self.goto_folder(game_name))
-            menu.add_button("📂 Cambiar directorio", 25, "info-outline", lambda: self.change_game_directory(game_name))
-            menu.add_button("🗑 Eliminar juego", 25, "danger-outline", self.confirm_remove)
-            
         
-        else:
-            menu.add_button("＋ Agregar juego", 25, "success-outline", self.add_exe)
-        
+        self.menucreator.create_menu(menu, game_name, btn_props, self)
+
         menu.show(x_root, y_root)
   
     def clean_info(self):

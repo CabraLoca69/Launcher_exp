@@ -15,26 +15,30 @@ class GameRunner:
     def run(self, game_path):
         raise NotImplementedError
 
-
 class WindowsRunner(GameRunner):
     def run(self, game_path):
         return subprocess.Popen(game_path)
 
-
 class LinuxNativeRunner(GameRunner):
     def run(self, game_path):
         return subprocess.Popen([game_path])
-
 
 class LinuxWineRunner(GameRunner):
     def __init__(self, wineprefix=None):
         self.wineprefix = wineprefix or os.path.expanduser("~/.wine")
 
     def run(self, game_path):
+
+        game_name = os.path.splitext(os.path.basename(game_path))[0]
+        steam_appid = db.get(f"global.steam_ids.{game_name}")
+
+        if steam_appid:
+            return subprocess.Popen(["steam", f"steam://rungameid/{steam_appid}"])
+
         env = os.environ.copy()
         env["WINEPREFIX"] = self.wineprefix
+        
         return subprocess.Popen(["wine", game_path], env=env)
-
 
 class LinuxSelector(GameRunner):
     def run(self, game_path):
@@ -48,38 +52,19 @@ class LinuxSelector(GameRunner):
         return LinuxNativeRunner().run(game_path)
 
 
-class RunnerFactory:
-    @staticmethod
-    def create():
-        if sys.platform.startswith("win"):
-            return WindowsRunner()
-        elif sys.platform.startswith("linux"):
-            return LinuxSelector()
-        else:
-            raise NotImplementedError(f"SO no soportado: {sys.platform}")
-
 # EXECUTABLE DETECTOR
 class ExecutableDetector:
     def is_executable(self, path: str) -> bool:
         raise NotImplementedError
 
-
 class WindowsExecutableDetector(ExecutableDetector):
     def is_executable(self, path):
         return os.path.splitext(path)[1].lower() in [".exe", ".bat", ".cmd"]
-
 
 class UnixExecutableDetector(ExecutableDetector):
     def is_executable(self, path):
         return os.path.isfile(path) and os.access(path, os.X_OK)
 
-
-class ExecutableDetectorFactory:
-    @staticmethod
-    def create():
-        if sys.platform.startswith("win"):
-            return WindowsExecutableDetector()
-        return UnixExecutableDetector()
 
 # SHORTCUTS
 class ShortcutCreator:
@@ -166,13 +151,12 @@ class LinuxShortcutCreator(ShortcutCreator):
         icon_target = self._resolve_icon(game_exe_path, game_name)
 
         content = f"""[Desktop Entry]
-Name={game_name}
-Comment=Lanzador Cl69
-Exec="{launcher_path}" --launch "{game_name}"
-Icon={icon_target}
-Terminal=false
-Type=Application
-"""
+                        Name={game_name}
+                        Comment=Lanzador Cl69
+                        Exec="{launcher_path}" --launch "{game_name}"
+                        Icon={icon_target}
+                        Terminal=false
+                        Type=Application"""
 
         file_path.write_text(content)
         os.chmod(file_path, 0o755)
@@ -184,19 +168,20 @@ Type=Application
 
         file_path = app_dir / f"{game_name.lower().replace(' ', '_')}.desktop"
 
+        #OJO ACA PUEDE NO FUNCIONAR EL ACCESO DIRECTO
         command = f'"{sys.executable}" "{Path(__file__).resolve()}" --launch "{game_name}"'
 
         icon_target = self._resolve_icon(game_path, game_name)
 
         content = f"""[Desktop Entry]
-Type=Application
-Name={game_name}
-Exec={command}
-Icon={icon_target}
-Terminal=false
-Categories=Game;
-StartupNotify=true
-"""
+                    Type=Application
+                    Name={game_name}
+                    Exec={command}
+                    Icon={icon_target}
+                    Terminal=false
+                    Categories=Game;
+                    StartupNotify=true
+                    """
 
         file_path.write_text(content)
         os.chmod(file_path, 0o755)
@@ -227,12 +212,58 @@ StartupNotify=true
         except Exception:
             return Path("/usr/share/pixmaps/default.png")
 
-class ShortcutFactory:
-    @staticmethod
-    def create():
-        if sys.platform.startswith("win"):
-            return WindowsShortcutCreator()
-        elif sys.platform.startswith("linux"):
-            return LinuxShortcutCreator()
+#Submenus 
+class MenuCreator:
+    def create_menu(self, menu, game_name, btn_props, frame):
+        raise NotImplementedError
+
+class BaseMenuCreator(MenuCreator):
+    def add_common_buttons(self, menu, game_name, btn_props, frame, platform_name):
+        if game_name:
+            menu.add_button("★ Favoritos", 25, "warning-outline",
+                            lambda: frame.toggle_favorite(game_name))
+
+            menu.add_button("⤓ Crear acceso directo", 25, "info-outline",
+                            lambda: frame.create_direct_access(
+                                game_name,
+                                os.path.abspath(sys.argv[0]),
+                                db.get(f"{platform_name}.game_list.{game_name}"),
+                                destino_desktop=True))
+
+            menu.add_button("📌 Añadir a inicio", 25, "info-outline",
+                            lambda: frame.create_start_menu_shortcut(
+                                game_name,
+                                db.get(f"{platform_name}.game_list.{game_name}"),
+                                ICONS))
+
+            menu.add_button("📁 Archivos locales", 25, "info-outline",
+                            lambda: frame.goto_folder(game_name))
+
+            menu.add_button("📂 Cambiar directorio", 25, "info-outline",
+                            lambda: frame.change_game_directory(game_name))
+
+            menu.add_button("🗑 Eliminar juego", 25, "danger-outline",
+                            frame.confirm_remove)
+
         else:
-            raise NotImplementedError
+            menu.add_button("＋ Agregar juego", 25, "success-outline", frame.add_exe)
+
+        return menu
+
+class WindowsMenuCreator(BaseMenuCreator):
+    def create_menu(self, menu, game_name, btn_props, frame):
+        if not btn_props:
+                menu.add_button("▶ Jugar", 25, "success-outline", frame.launch_game)
+        return self.add_common_buttons(menu, game_name, btn_props, frame, platform_name="windows")
+
+class LinuxMenuCreator(BaseMenuCreator):
+    def create_menu(self, menu, game_name, btn_props, frame):
+        if not btn_props:
+                menu.add_button("▶ Jugar", 25, "success-outline", frame.launch_game)
+        if game_name:
+            menu.add_button("Steam ID", 25, "info-outline",
+                            lambda: frame.ask_steam_id(game_name))
+
+        return self.add_common_buttons(menu, game_name, btn_props, frame, platform_name="linux")
+
+

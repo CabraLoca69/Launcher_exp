@@ -23,7 +23,6 @@ if platform.system() == "Linux":
 
 
 # ---------------- FALLBACK ----------------
-
 def _fallback_icon(size):
     fallback = Path(datafiles.ICONS) / "no_icon.ico"
 
@@ -114,50 +113,60 @@ def _get_linux_icon(path, size):
 
     return Image.open(icon_path).resize(size, Image.LANCZOS)
 
-
 # ---------------- WINE ICON ----------------
-
 def is_wine_executable(path: str) -> bool:
     return path.lower().endswith((".exe", ".bat", ".cmd"))
 
-
 def get_wine_icon(path: str, size=(16, 16)):
-    icon_dir = Path(datafiles.ICONS)
+    icon_dir = Path(datafiles.ICONS_CACHE_DIR)
     icon_dir.mkdir(parents=True, exist_ok=True)
 
-    icon_path = icon_dir / f"{Path(path).stem}.png"
+    stem = Path(path).stem
 
-    if icon_path.exists():
-        return Image.open(icon_path).resize(size, Image.LANCZOS)
+    fixed_ico = icon_dir / f"{stem}.exe.ico"       
+    fixed_png = icon_dir / f"{stem}.exe.ico.png"     
+
+    #Si ya exist el icono, devolverlo
+    if fixed_png.exists():
+        return Image.open(fixed_png).resize(size, Image.LANCZOS)
 
     try:
+        # extraer todos los iconos
         subprocess.run(
-            ["icotool", "-x", "-o", str(icon_dir), path],
+            ["wrestool", "-x", "-t", "group_icon", path, "-o", icon_dir],
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=True
+            stderr=subprocess.PIPE
         )
 
-        pngs = list(icon_dir.glob(f"{Path(path).stem}*.png"))
-        if pngs:
-            return Image.open(pngs[0]).resize(size, Image.LANCZOS)
+        # detectar todos los .ico generados
+        ico_files = list(icon_dir.glob(f"{stem}*.ico"))
+
+        if ico_files:
+            ico_files.sort(key=lambda f: f.stat().st_size, reverse=True)
+
+            best_ico = ico_files[0]  # el mejor
+            best_ico.rename(fixed_ico)
+
+            for extra in ico_files[1:]:
+                extra.unlink(missing_ok=True)
+
+            img = Image.open(fixed_ico)
+            img.save(fixed_png)
+
+            return img.resize(size, Image.LANCZOS)
 
     except Exception as e:
         print(f"[Wine icon error] {e}")
 
-    cached = Path(datafiles.ICONS_CACHE_DIR) / f"{Path(path).stem}.exe.ico"
-
-    if cached.exists():
-        png = ico_to_png(cached)
-        return Image.open(png).resize(size, Image.LANCZOS)
+    # fallback: si ya existe un .ico fijo viejo
+    if fixed_ico.exists():
+        img = Image.open(fixed_ico)
+        img.save(fixed_png)
+        return img.resize(size, Image.LANCZOS)
 
     return _fallback_icon(size)
 
-
-# =========================================================
 # ================= ICON PROVIDER =========================
-# =========================================================
-
 class IconProvider:
     def get_icon(self, path: str, size=(16, 16)):
         raise NotImplementedError

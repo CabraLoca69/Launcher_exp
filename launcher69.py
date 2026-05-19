@@ -23,3 +23,16 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+######## Reparar
+"""
+
+GameDetailsPanel no muestra el icono
+Mostrar Steam ID si existe en GameDetailsPanel
+
+Ir al directorio no funciona
+embellecer el boton de steam id
+
+Arreglar acc directos y Añadir a inicio
+"""

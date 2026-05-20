@@ -29,6 +29,8 @@ if __name__ == "__main__":
 """
 que se limpien iconos que ya no estan en uso
 funcion para quitar acc directos y menu de inicio?
-que el build genere un buen .bin
 """
 ######## Reparar
+""" 
+hacer bien lo de agregar steam_id (se ve horrible)
+"""

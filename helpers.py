@@ -16,7 +16,7 @@ from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
 
 class Loader:
     def __init__(self):
-        self.default_icon= load_icon(os.path.join(ICONS, "no_icon.ico"), size=(16,16))
+        self.default_icon= load_icon(os.path.join(ICONS, "no_icon.ico"))
         self.grouped = True
         #este revisa que tipo de ejecutable tenemos
         self.executable_detector = PLATFORM_METHODS[CURRENT_OS]["exedetect"]()
@@ -344,8 +344,8 @@ def reload_in_thread(self, on_callback):
 
 def collect_platform_data(platform_name):
     grouped = True
-    default_icon = load_icon(os.path.join(ICONS, "no_icon.ico"), size=(16,16))
-
+    default_icon = load_icon(os.path.join(ICONS, "no_icon.ico"))
+    
     result = {
         "platform": platform_name,
         "games": [],

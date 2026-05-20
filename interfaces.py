@@ -783,7 +783,8 @@ class GameDetailsPanel(tb.Frame):
         if os.path.exists(ico_path):
             self.icon = load_icon(ico_path)
         else:
-            self.icon = self.ProviderOfIcons.get_icon(os.path.join(ICONS, "no_icon.ico"))
+            noicon_path = os.path.join(ICONS, "no_icon.ico")
+            self.icon = load_icon(noicon_path)
                
     def show_game_details(self, game_name):
         self.game_name = game_name

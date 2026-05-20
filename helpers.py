@@ -10,9 +10,9 @@ from datetime import datetime
 from tkinter import filedialog
 from machine_id import get_machine_id
 from cloudsync import call_upload
-from icon_utils import load_icon, IconProviderFactory, IconUIAdapter
+from icon_utils import load_icon, IconUIAdapter
 from datafiles import ICONS, db
-from registered_platforms import CURRENT_OS, PLATFORM_METHODS
+from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
 
 class Loader:
     def __init__(self):
@@ -37,13 +37,6 @@ class Loader:
 
         self.scan_for_games(platform_name)
         return folder
-
-    def is_executable(self, path):
-        """Devuelve True si el archivo es ejecutable en este SO"""
-        if sys.platform.startswith("win"):
-            return os.path.splitext(path)[1].lower() in [".exe", ".bat", ".cmd", ".sh"]
-        else:  # Linux / macOS
-            return os.path.isfile(path) and os.access(path, os.X_OK)
 
     def scan_for_games(self, platform_name):
         ignore_keywords = [
@@ -369,7 +362,8 @@ def collect_platform_data(platform_name):
     favorites   = db.get_children(f"{platform_name}.favorites")
 
     if grouped:
-        icons = IconUIAdapter(IconProviderFactory.create())
+        icons = PLATFORM_METHODS[CURRENT_OS]["icons"]()
+        icons = IconUIAdapter(icons)
         for name, path in sorted(game_list.items(), key=lambda item: loader.sort_key(item[0], game_times)):
             game_info = {"name": name, "path": path, "icon": icons.get_icon(path) or default_icon}
             result["grouped"].append(game_info)

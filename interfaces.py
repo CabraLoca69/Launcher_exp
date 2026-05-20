@@ -15,9 +15,8 @@ from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageTk
 from googleapiclient.discovery import build
 from machine_id import get_machine_id
-from icon_utils import IconUIAdapter, IconProviderFactory, set_window_icon, load_icon
-from switcher import ShortcutFactory, MenuFactory
-from registered_platforms import CURRENT_OS, PLATFORM_METHODS
+from icon_utils import IconUIAdapter, load_icon
+from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
 from custommenus import ConfirmDialog
 from cloudsync import get_drive_service, call_merge
 from helpers import Loader, GameLauncherController, reload_in_thread, collect_platform_data
@@ -43,8 +42,7 @@ class LauncherUI:
         self.root.title("CLauncher69")
         self.root.geometry("900x600")
         self.root.minsize(600, 400)
-
-        set_window_icon(self.root)
+        PLATFORM_METHODS[CURRENT_OS]["icons"]().set_window_icon(self.root)
         
         # Splash integrado
         self.splash = SplashFrame(self.root, title="Cargando Launcher...")
@@ -269,7 +267,6 @@ class DraggableNotebook(tb.Notebook):
         self.platform_frames = {}
         self.platform_trees = {}
         self.loader = Loader()
-        self.default_icon= load_icon(os.path.join(ICONS, "no_icon.ico"), size=(16,16))
         self.service = None
                         
         # este frame se usa cuando no hay tabs (plataformas)
@@ -459,6 +456,8 @@ class GamePlatformFrame(ttk.Frame):
         self.gamelaunch.register_ui(self.platform_name, self)
         self.shortcutcreator = PLATFORM_METHODS[CURRENT_OS]["shortcut"]()  
         self.menucreator = PLATFORM_METHODS[CURRENT_OS]["menu"]()
+        self.file_walker = PLATFORM_METHODS[CURRENT_OS]["paths"]()
+        self.ProviderOfIcons = PLATFORM_METHODS[CURRENT_OS]["icons"]()
         
         self.rowconfigure(0, weight=0)
         self.rowconfigure(1, weight=1)
@@ -659,18 +658,16 @@ class GamePlatformFrame(ttk.Frame):
         game_list = db.get_children(f"{platform_name}.game_list")
         for game_name, game_path in game_list.items():
             if search_text in game_name.lower():
-                icons = IconUIAdapter(IconProviderFactory.create())
-                icon = icons.get_icon(game_path) or self.default_icon
+                icon = self.ProviderOfIcons.get_icon(game_path) or self.default_icon
                 game_tree.icon_images[game_name] = icon
                 base_name = os.path.splitext(game_name)[0]
                 game_tree.insert("", "end", iid=game_name, text="", image=icon, values=(base_name,))
                  
-    def goto_folder(self, game_name):
+    def gotofolder(self, game_name):
         if hasattr(self, "menu_popup") and self.menu_popup:
             self.menu_popup.destroy()
         platform_name = self.platform_name
-        path= os.path.dirname(db.get(f"{platform_name}.game_list.{game_name}"))
-        os.startfile(path)
+        self.file_walker.goto_folder(db.get(f"{platform_name}.game_list.{game_name}"))
 
     def change_game_directory(self, game_name):
         if hasattr(self, "menu_popup") and self.menu_popup:
@@ -760,8 +757,7 @@ class GamePlatformFrame(ttk.Frame):
         menu = custommenus.CustomPopupMenu(self)
         self.menu_popup = menu
         
-        
-        self.menucreator.create_menu(menu, game_name, btn_props, self)
+        self.menucreator.create_menu(menu, platform_name, game_name, btn_props, self)
 
         menu.show(x_root, y_root)
   
@@ -779,6 +775,7 @@ class GameDetailsPanel(tb.Frame):
         self.current_game_displayed = None
         self.stop_watcher = True
         self.sessions_frame = None
+        self.ProviderOfIcons = PLATFORM_METHODS[CURRENT_OS]["icons"]()
         self.bind("<Destroy>", self.stop_session_watcher)
         
         
@@ -786,10 +783,8 @@ class GameDetailsPanel(tb.Frame):
         if os.path.exists(ico_path):
             self.icon = load_icon(ico_path)
         else:
-            icons = IconUIAdapter(IconProviderFactory.create())
-            self.icon = icons.get_icon(os.path.join(ICONS, "no_icon.ico"))
-            
-    
+            self.icon = self.ProviderOfIcons.get_icon(os.path.join(ICONS, "no_icon.ico"))
+               
     def show_game_details(self, game_name):
         self.game_name = game_name
         self.current_game_displayed = game_name
@@ -912,8 +907,8 @@ class GameDetailsPanel(tb.Frame):
                     frame = tb.Frame(self)
                     frame.pack(fill="x", padx=20, pady=5)
 
-                    icons = IconUIAdapter(IconProviderFactory.create())
-                    icon = icons.get_icon(path)
+                    icon = IconUIAdapter(self.ProviderOfIcons).get_icon(path)
+
                     if icon:
                         icon_label = tk.Label(frame, image=icon)
                         icon_label.image = icon
@@ -931,7 +926,8 @@ class GameDetailsPanel(tb.Frame):
         self.stop_session_watcher()
         for widget in self.winfo_children():
             widget.destroy()
-    #puedo usar esto si quiero mostrar las horas jugadas como hh:mm
+
+ #puedo usar esto si quiero mostrar las horas jugadas como hh:mm
     def format_playtime(minutes):
         total_min = int(minutes)
         hours = total_min // 60
@@ -959,7 +955,7 @@ class NotesWindow(tb.Toplevel):
         self.geometry("600x400")
         self.resizable(True, True)
         self.open = True
-        set_window_icon(self, "sort_apps.ico")
+        PLATFORM_METHODS[CURRENT_OS]["icons"]().set_window_icon(self, "sort_apps.ico")
 
         self.game_name = game_name
         
@@ -1001,6 +997,7 @@ class PropertiesWindow(custommenus.AutoCloseFrame):
         self.on_update_callback = on_update_callback
         self.on_update_tab = on_update_tab
         self.loader = Loader()
+        self.file_walker = PLATFORM_METHODS[CURRENT_OS]["paths"]()
         
         self.build_ui()
 
@@ -1103,7 +1100,7 @@ class PropertiesWindow(custommenus.AutoCloseFrame):
             if event.y >= y and event.y <= y + height:        
                 path_listbox.selection_clear(0, tk.END)  # Limpiar por si acaso
                 path_listbox.selection_set(index)        # Asegurar selección                
-                self.goto_folder()
+                self.gotofolder()
 
     def on_path_right_click(self, event):
         path_listbox = self.path_listbox
@@ -1118,7 +1115,7 @@ class PropertiesWindow(custommenus.AutoCloseFrame):
                 path_listbox.selection_clear(0, tk.END)  # Limpiar cualquier selección anterior
                 path_listbox.selection_set(index)        # Seleccionar el ítem clickeado
                 
-                self.menu.add_button("📂 Ir a carpeta local", 20, "secondary", command= self.goto_folder)
+                self.menu.add_button("📂 Ir a carpeta local", 20, "secondary", command= self.gotofolder)
                 self.menu.add_button("🗑️ Eliminar directorio",20, "secondary", command= self.confirm_remove)
     
                 # Obtener las coordenadas del puntero
@@ -1152,14 +1149,14 @@ class PropertiesWindow(custommenus.AutoCloseFrame):
         self.update_directory_list()
         self.update_game_list()
 
-    def goto_folder(self):
+    def gotofolder(self):
         path_listbox = self.path_listbox 
         selected = path_listbox.curselection()
         if selected:
             game_path_selected = path_listbox.get(selected[0])      
             if game_path_selected:
                 self.close_menu()
-                os.startfile(game_path_selected)
+                self.file_walker.goto_folder(game_path_selected)
             else:
                 messagebox.showwarning("Atención", "No se pudo encontrar el Directorio")
         else:

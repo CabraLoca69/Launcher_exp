@@ -25,14 +25,10 @@ if __name__ == "__main__":
     main()
 
 
+#### A implementar
+"""
+que se limpien iconos que ya no estan en uso
+funcion para quitar acc directos y menu de inicio?
+que el build genere un buen .bin
+"""
 ######## Reparar
-"""
-
-GameDetailsPanel no muestra el icono
-Mostrar Steam ID si existe en GameDetailsPanel
-
-Ir al directorio no funciona
-embellecer el boton de steam id
-
-Arreglar acc directos y Añadir a inicio
-"""

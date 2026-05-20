@@ -1,5 +1,10 @@
 import sys
-from switcher import WindowsMenuCreator, LinuxMenuCreator, WindowsShortcutCreator, LinuxShortcutCreator, WindowsRunner, LinuxSelector
+from .runners_handler import WindowsRunner, LinuxSelector
+from .executables_handler import WindowsExecutableDetector, UnixExecutableDetector
+from .shortcuts_handler import WindowsShortcutCreator, LinuxShortcutCreator
+from .menus_handler import WindowsMenuCreator, LinuxMenuCreator
+from .paths_handler import WindowsGoToFolder, LinuxGoToFolder
+from .icons_handler import WindowsIconProvider, LinuxIconProvider
 
 if sys.platform.startswith("win"):
     CURRENT_OS = "windows"
@@ -15,13 +20,15 @@ PLATFORM_METHODS = {
         "menu": WindowsMenuCreator,
         "shortcut": WindowsShortcutCreator,
         "exedetect" : WindowsExecutableDetector,
+        "paths" : WindowsGoToFolder,
+        "icons" : WindowsIconProvider
     },
     "linux": {
     "runner": LinuxSelector,
     "menu": LinuxMenuCreator,
     "shortcut" : LinuxShortcutCreator,
     "exedetect" : UnixExecutableDetector,
+    "paths" : LinuxGoToFolder,
+    "icons" : LinuxIconProvider
     }
 }
-
-

@@ -19,7 +19,7 @@ from icon_utils import IconUIAdapter, load_icon
 from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
 from custommenus import ConfirmDialog
 from cloudsync import get_drive_service, call_merge
-from helpers import Loader, GameLauncherController, reload_in_thread, collect_platform_data
+from helpers import Loader, GameLauncherController, reload_in_thread, collect_platform_data, safe_askdirectory
 from datafiles import DATA_DIR, ICONS_CACHE_DIR, ICONS, CONFIG_FILE, db, notes_db
 
 class SplashFrame(tb.Frame):
@@ -359,9 +359,11 @@ class DraggableNotebook(tb.Notebook):
     def new_platform(self, platform_name):
         if not platform_name:
             return
-
-        folder = self.loader.add_folder(platform_name)
-        if not folder:
+        
+        folder = safe_askdirectory()
+        if folder:
+            self.loader.add_folder(platform_name, folder)
+        else:
             return
 
         call_populate(platform_name, self)
@@ -748,7 +750,7 @@ class GamePlatformFrame(ttk.Frame):
             if hasattr(self, "menu_popup") and self.menu_popup:
                 self.menu_popup.destroy()
         
-            input.grid(row=0, column=1)
+            input.place(relx=0.5, rely=0, anchor="n")
 
         ask_input()
 
@@ -1146,9 +1148,13 @@ class PropertiesWindow(custommenus.AutoCloseFrame):
         
     def btn_new_path(self):
         self.close_menu()
-        self.loader.add_folder(self.platform_name)
-        self.update_directory_list()
-        self.update_game_list()
+        folder = safe_askdirectory()
+        if folder:
+            self.loader.add_folder(self.platform_name, folder)
+            self.update_directory_list()
+            self.update_game_list()
+        else: 
+            return
 
     def gotofolder(self):
         path_listbox = self.path_listbox 

@@ -27,10 +27,12 @@ if __name__ == "__main__":
 
 #### A implementar
 """
-que se limpien iconos que ya no estan en uso
+Nueva interfaz Qt6
+
 funcion para quitar acc directos y menu de inicio?
 """
 ######## Reparar
 """ 
 hacer bien lo de agregar steam_id (se ve horrible)
+para esto se va a implementar una ventana nueva con opciones sobre los juegos 
 """

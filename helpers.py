@@ -5,13 +5,15 @@ import psutil
 import time
 import sys
 import json
+import glob
+from pathlib import Path
 from safe_threading import safe_thread
 from datetime import datetime
 from tkinter import filedialog
 from machine_id import get_machine_id
 from cloudsync import call_upload
 from icon_utils import load_icon, IconUIAdapter
-from datafiles import ICONS, db
+from datafiles import ICONS, ICONS_CACHE_DIR, db
 from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
 
 class Loader:
@@ -22,9 +24,7 @@ class Loader:
         self.executable_detector = PLATFORM_METHODS[CURRENT_OS]["exedetect"]()
         pass
     
-    def add_folder(self, platform_name):  # agrega un directorio a la lista 
-        folder = safe_askdirectory()
-        
+    def add_folder(self, platform_name, folder):  # agrega un directorio a la lista   
         # Asegura que exista la estructura base de la plataforma
         db.ensure(f"{platform_name}.platform_folders", [])
         db.ensure(f"{platform_name}.favorites", [])
@@ -79,10 +79,17 @@ class Loader:
         if not game_path:
             return
 
-        icon_name = os.path.basename(game_path) + ".ico"  # Ej: "game.exe.ico"
-        icon_path = os.path.join("icons_cache", icon_name)
-        if os.path.exists(icon_path):
-            os.remove(icon_path)
+        base_name = Path(os.path.basename(game_path)).stem
+        icon_pattern = os.path.join(ICONS_CACHE_DIR , base_name + ".*") 
+
+        # Buscar y eliminar cualquier archivo que coincida
+        for icon_file in glob.glob(icon_pattern):
+            try:
+                os.remove(icon_file)
+                #print(f"Icono eliminado: {icon_file}")
+
+            except OSError as e:
+                print(f"No se pudo eliminar {icon_file}: {e}")
             
 class GameLauncherController:
     _instance = None

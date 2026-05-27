@@ -65,22 +65,9 @@ class WindowsShortcutCreator(ShortcutCreator):
             print(f"Error creando Start Menu shortcut: {e}")
 
 #______________ LINUX ______________
-
-def get_desktop_dir():
-    xdg_file = Path.home() / ".config" / "user-dirs.dirs"
-
-    if xdg_file.exists():
-        for line in xdg_file.read_text().splitlines():
-            if line.startswith("XDG_DESKTOP_DIR"):
-                path = line.split("=")[1].strip().replace('"', "")
-                return Path(path.replace("$HOME", str(Path.home())))
-
-    return Path.home() / "Desktop"
-
 class LinuxShortcutCreator(ShortcutCreator):
-
     def create_direct_access(self, game_name, launcher_path, game_exe_path, destino_desktop=True):
-        desktop_dir = get_desktop_dir() if destino_desktop else Path.cwd()
+        desktop_dir = self.get_desktop_dir() if destino_desktop else Path.cwd()
         desktop_dir.mkdir(parents=True, exist_ok=True)
 
         file_path = desktop_dir / f"{game_name}.desktop"
@@ -121,6 +108,17 @@ class LinuxShortcutCreator(ShortcutCreator):
 
         file_path.write_text(content)
         os.chmod(file_path, 0o755)
+
+    def get_desktop_dir(self):
+        xdg_file = Path.home() / ".config" / "user-dirs.dirs"
+
+        if xdg_file.exists():
+            for line in xdg_file.read_text().splitlines():
+                if line.startswith("XDG_DESKTOP_DIR"):
+                    path = line.split("=")[1].strip().replace('"', "")
+                    return Path(path.replace("$HOME", str(Path.home())))
+
+        return Path.home() / "Desktop"
 
     def _resolve_icon(self, game_exe_path, game_name):            
         cache_icon_path = ICONS_CACHE_DIR / f"{Path(game_exe_path).stem}.png"

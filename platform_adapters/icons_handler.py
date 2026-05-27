@@ -31,6 +31,9 @@ def _fallback_icon(size):
     return Image.open(fallback).resize(size, Image.LANCZOS)
 
 class IconProvider:
+    def set_window_icon(self, window, icon_name="icon.ico"):
+        raise NotImplementedError
+        
     def get_icon(self, path: str, size=(16, 16)):
         raise NotImplementedError
 
@@ -54,6 +57,7 @@ class WindowsIconProvider(IconProvider):
     def get_icon(self, path, size=(16, 16)):
         exe_name = Path(exe_path).stem
         ico_path = Path(datafiles.ICONS_CACHE_DIR) / f"{exe_name}.ico"
+        ico_path.parent.mkdir(parents=True, exist_ok=True)
 
         if ico_path.exists():
             return Image.open(ico_path).resize(size, Image.LANCZOS)
@@ -91,9 +95,7 @@ class WindowsIconProvider(IconProvider):
                     1
                 )
 
-                ico_path.parent.mkdir(parents=True, exist_ok=True)
                 image.save(ico_path, format="ICO", sizes=[size])
-
                 win32gui.DestroyIcon(hicon)
 
                 return image.resize(size, Image.LANCZOS)

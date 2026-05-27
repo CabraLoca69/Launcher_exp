@@ -7,6 +7,10 @@ class MenuCreator:
         raise NotImplementedError
 
 class BaseMenuCreator(MenuCreator):
+    def add_play_button(self, menu, platform_name, game_name, btn_props, frame):
+        if not btn_props:
+                menu.add_button("▶ Jugar", 25, "success-outline", frame.launch_game)
+    
     def add_common_buttons(self, menu, platform_name, game_name, btn_props, frame):
         if game_name:
             menu.add_button("★ Favoritos", 25, "warning-outline",
@@ -42,14 +46,12 @@ class BaseMenuCreator(MenuCreator):
 
 class WindowsMenuCreator(BaseMenuCreator):
     def create_menu(self, menu, platform_name, game_name, btn_props, frame):
-        if not btn_props:
-                menu.add_button("▶ Jugar", 25, "success-outline", frame.launch_game)
+        self.add_play_button(menu, platform_name, game_name, btn_props, frame)
         return self.add_common_buttons(menu, game_name, btn_props, frame, platform_name)
 
 class LinuxMenuCreator(BaseMenuCreator):
     def create_menu(self, menu, platform_name, game_name, btn_props, frame, ):
-        if not btn_props:
-                menu.add_button("▶ Jugar", 25, "success-outline", frame.launch_game)
+        self.add_play_button(menu, platform_name, game_name, btn_props, frame)
         if game_name:
             menu.add_button("Steam ID", 25, "info-outline",
                             lambda: frame.ask_steam_id(game_name))

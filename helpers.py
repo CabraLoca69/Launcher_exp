@@ -15,10 +15,10 @@ from cloudsync import call_upload
 from icon_utils import load_icon, IconUIAdapter
 from datafiles import ICONS, ICONS_CACHE_DIR, db
 from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
+from PySide6.QtCore import QObject, Signal, QThread
 
 class Loader:
     def __init__(self):
-        self.default_icon= load_icon(os.path.join(ICONS, "no_icon.ico"))
         self.grouped = True
         #este revisa que tipo de ejecutable tenemos
         self.executable_detector = PLATFORM_METHODS[CURRENT_OS]["exedetect"]()
@@ -78,7 +78,7 @@ class Loader:
     def remove_game_icon(self, game_path):
         if not game_path:
             return
-
+            
         base_name = Path(os.path.basename(game_path)).stem
         icon_pattern = os.path.join(ICONS_CACHE_DIR , base_name + ".*") 
 
@@ -336,7 +336,7 @@ def is_process_running(pid):
     except Exception:
         return False
 
-def reload_in_thread(self, on_callback):
+def reload_in_thread(ui, on_callback):
     def worker():
         all_data = []
 
@@ -345,13 +345,13 @@ def reload_in_thread(self, on_callback):
         for platform_name in tab_order:
             all_data.append(collect_platform_data(platform_name))
 
-        self.root.after(0, lambda: on_callback(all_data))
+        ui.root.after(0, lambda: on_callback(all_data))
 
     safe_thread(worker)
 
 def collect_platform_data(platform_name):
     grouped = True
-    default_icon = load_icon(os.path.join(ICONS, "no_icon.ico"))
+    default_icon = os.path.join(ICONS, "no_icon.ico")
     
     result = {
         "platform": platform_name,
@@ -370,7 +370,6 @@ def collect_platform_data(platform_name):
 
     if grouped:
         icons = PLATFORM_METHODS[CURRENT_OS]["icons"]()
-        icons = IconUIAdapter(icons)
         for name, path in sorted(game_list.items(), key=lambda item: loader.sort_key(item[0], game_times)):
             game_info = {"name": name, "path": path, "icon": icons.get_icon(path) or default_icon}
             result["grouped"].append(game_info)
@@ -391,4 +390,37 @@ def collect_platform_data(platform_name):
         else:
             result["recent"].append(game_info)"""
             
+class ReloadWorker(QObject):
+    finished = Signal(list)      # Para enviar all_data al UI
 
+    def run(self):
+        all_data = []
+
+        tab_order = db.get("global.tab_order", [])
+
+        for platform_name in tab_order:
+            self.progress.emit(f"Cargando {platform_name}...")
+
+            data = collect_platform_data(platform_name)
+            all_data.append(data)
+
+        self.finished.emit(all_data)
+    
+    def reload_with_thread(ui, on_callback):
+        ui.worker_thread = QThread()
+        ui.worker = ReloadWorker()
+
+        ui.worker.moveToThread(ui.worker_thread)
+
+        # Cuando arranca → worker.run
+        ui.worker_thread.started.connect(ui.worker.run)
+
+        # Cuando termina → callback UI
+        ui.worker.finished.connect(on_callback)
+
+        # Cuando termina → destrucción del thread
+        ui.worker.finished.connect(ui.worker_thread.quit)
+        ui.worker.finished.connect(ui.worker.deleteLater)
+        ui.worker_thread.finished.connect(ui.worker_thread.deleteLater)
+
+        ui.worker_thread.start()

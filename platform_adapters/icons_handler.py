@@ -28,7 +28,7 @@ def _fallback_icon(size):
     if fallback.suffix.lower() == ".ico":
         fallback = ico_to_png(fallback, size=size)
 
-    return Image.open(fallback).resize(size, Image.LANCZOS)
+    return fallback
 
 class IconProvider:
     def set_window_icon(self, window, icon_name="icon.ico"):
@@ -60,7 +60,7 @@ class WindowsIconProvider(IconProvider):
         ico_path.parent.mkdir(parents=True, exist_ok=True)
 
         if ico_path.exists():
-            return Image.open(ico_path).resize(size, Image.LANCZOS)
+            return ico_path
 
         try:
             large, small = win32gui.ExtractIconEx(exe_path, 0)
@@ -98,7 +98,7 @@ class WindowsIconProvider(IconProvider):
                 image.save(ico_path, format="ICO", sizes=[size])
                 win32gui.DestroyIcon(hicon)
 
-                return image.resize(size, Image.LANCZOS)
+                return ico_path
 
         except Exception as e:
             print(f"[WARN] Windows icon error: {e}")
@@ -161,7 +161,7 @@ class LinuxIconProvider(IconProvider):
         if not icon_path:
             return _fallback_icon(size)
 
-        return Image.open(icon_path).resize(size, Image.LANCZOS)
+        return ico_path
 
     # ---------------- extrae el icono de un wine como si fuese un .exe ----------------
     def is_wine_executable(self, path: str) -> bool:
@@ -178,7 +178,7 @@ class LinuxIconProvider(IconProvider):
 
         #Si ya exist el icono, devolverlo
         if fixed_png.exists():
-            return Image.open(fixed_png).resize(size, Image.LANCZOS)
+            return fixed_png
 
         try:
             # extraer todos los iconos
@@ -202,7 +202,7 @@ class LinuxIconProvider(IconProvider):
                 img = Image.open(fixed_ico)
                 img.save(fixed_png)
 
-                return img.resize(size, Image.LANCZOS)
+                return fixed_png
 
         except Exception as e:
             print(f"[Wine icon error] {e}")
@@ -211,7 +211,7 @@ class LinuxIconProvider(IconProvider):
         if fixed_ico.exists():
             img = Image.open(fixed_ico)
             img.save(fixed_png)
-            return img.resize(size, Image.LANCZOS)
+            return fixed_png
 
         return _fallback_icon(size)
 

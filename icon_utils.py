@@ -5,24 +5,21 @@ import ctypes
 from pathlib import Path
 from PIL import Image, ImageTk
 
-import datafiles
 
-# =============== OPTIONAL UI ADAPTER ====================
 class IconUIAdapter:
     def __init__(self, provider):
         self.provider = provider
 
     def get_icon(self, path, size=(16,16)):
         img = self.provider.get_icon(path, size)
-        return ImageTk.PhotoImage(img)
-
+        return load_icon(img)
 
 def load_icon(path, size=(16,16)):
     path = Path(path)
     if platform.system() == "Linux" and path.suffix.lower() == ".ico":
         path = ico_to_png(path, output_dir=path.parent)
     img = Image.open(path).resize(size, Image.LANCZOS)
-    return ImageTk.PhotoImage(img) 
+    return ImageTk.PhotoImage(img)
 
 def ico_to_png(ico_path, output_dir=None, size=(256,256)):
     """

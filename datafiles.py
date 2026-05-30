@@ -19,6 +19,7 @@ ICONS_CACHE_DIR = DATA_DIR / "icons_cache"
 ICONS = DATA_DIR / "icons"
 CLOUD = DATA_DIR / "cloud_files"
 MACHINE_ID_FILE = DATA_DIR / "machine_id.txt"
+THEMES_DIR = DATA_DIR / "themes"
 
 # Crear carpetas si no existen
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -26,6 +27,7 @@ DB_DIR.mkdir(parents=True, exist_ok=True)
 ICONS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 ICONS.mkdir(parents=True, exist_ok=True)
 CLOUD.mkdir(parents=True, exist_ok=True)
+THEMES_DIR.mkdir(parents=True, exist_ok=True)
 
 # ------------------------------
 # Archivos locales

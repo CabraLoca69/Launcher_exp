@@ -1,8 +1,9 @@
 import sys
 from cloudsync import call_merge
 from interfaces import LauncherUI, update_ui
-from datafiles import db
+from datafiles import db, THEMES_DIR
 from helpers import GameLauncherController
+from qt_interface import NewLauncherUI
 
 def main():
     if "--launch" in sys.argv:
@@ -18,8 +19,15 @@ def main():
             call_merge(callback= call_update)
 
         launcher_controler = GameLauncherController()
-        launcherui = LauncherUI() 
-        launcherui.set()
+        #start_old_ui()
+        start_new_ui()
+
+def start_old_ui():
+    launcherui = LauncherUI() 
+    launcherui.set()
+
+def start_new_ui():
+    NewLauncherUI.launch_ui()
 
 if __name__ == "__main__":
     main()

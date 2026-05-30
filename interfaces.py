@@ -22,6 +22,7 @@ from cloudsync import get_drive_service, call_merge
 from helpers import Loader, GameLauncherController, reload_in_thread, collect_platform_data, safe_askdirectory
 from datafiles import DATA_DIR, ICONS_CACHE_DIR, ICONS, CONFIG_FILE, db, notes_db
 
+
 class SplashFrame(tb.Frame):
     def __init__(self, parent, title="Cargando..."):
         super().__init__(parent)
@@ -660,7 +661,7 @@ class GamePlatformFrame(ttk.Frame):
         game_list = db.get_children(f"{platform_name}.game_list")
         for game_name, game_path in game_list.items():
             if search_text in game_name.lower():
-                icon = self.ProviderOfIcons.get_icon(game_path) or self.default_icon
+                icon = load_icon(self.ProviderOfIcons.get_icon(game_path)) or self.default_icon
                 game_tree.icon_images[game_name] = icon
                 base_name = os.path.splitext(game_name)[0]
                 game_tree.insert("", "end", iid=game_name, text="", image=icon, values=(base_name,))
@@ -1411,8 +1412,10 @@ def populate_ui(all_data, target, select_new= True):
             tree.icon_images = {}
         
         for g in grouped:
-            tree.icon_images[g["name"]] = g["icon"]
-            tree.insert("", "end", iid=g["name"], text="", image=g["icon"], values=(g["name"],))
+            icon_img = load_icon(g["icon"])
+            tree.icon_images[g["name"]] = icon_img
+            
+            tree.insert("", "end", iid=g["name"], text="", image= icon_img , values=(g["name"],))
             
         #Favoritos
         #fav_node = tree.insert("", "end", text="★ Favoritos", open=True)

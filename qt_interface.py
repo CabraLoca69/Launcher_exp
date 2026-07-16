@@ -2,7 +2,8 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QStackedWidget,
     QLineEdit, QTabWidget, QLabel, QPushButton, QScrollArea,
     QFileDialog, QTreeWidget, QTreeWidgetItem,
-    QInputDialog, QApplication, QFrame, QSizePolicy
+    QInputDialog, QApplication, QFrame, QSizePolicy, QDialog,
+    QCheckBox
 )
 
 from PySide6.QtCore import Qt, QSize, QObject, QThread, Signal, QTimer
@@ -11,13 +12,18 @@ from PySide6.QtGui import QShortcut, QKeySequence
 
 import sys
 from pathlib import Path
+import logging
 
+from datafiles import DATA_DIR
+from safe_threading import safe_thread
+from cloudsync import get_drive_service, call_merge
 from helpers import Loader, collect_platform_data, GameLauncherController
 from qicon_utils import QIconUIAdapter, load_qicon
 from datafiles import THEMES_DIR, db
 from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
 from qpopups import ConfirmDialog, CustomPopupMenu
 
+# Panel de favoritos
 class FavoritesPanel(QWidget):
     """
     Muestra los juegos favoritos de la plataforma con ícono, nombre,
@@ -129,7 +135,6 @@ class FavoritesPanel(QWidget):
  
     def _launch(self, game_name: str):
         GameLauncherController().launch_game(game_name)
-
 
 # Panel de detalles de un juego (panel derecho)
 class GameDetailPanel(QWidget):
@@ -324,10 +329,7 @@ class ClearableTreeWidget(QTreeWidget):
             self.cleared.emit()
         super().mousePressEvent(event)
 
-
-# ===========================================================================
 # Tab de una plataforma: sidebar + panel derecho con QStackedWidget
-# ===========================================================================
 class PlatformTab(QWidget):
     def __init__(self, platform_name: str, parent=None):
         super().__init__(parent)
@@ -461,10 +463,96 @@ class PlatformTab(QWidget):
             item = self.games_tree.topLevelItem(i)
             item.setHidden(text not in item.text(0).lower())
  
- 
-# ===========================================================================
+# clouding
+class CloudSettingsWindow(QDialog):
+    login_finished = Signal(bool)  # ok, email
+
+    def __init__(self, parent, on_close_callback=None):
+        super().__init__(parent)
+        self.setObjectName("cloudSettingsWindow")
+        self.setWindowTitle("Configuración de nube")
+        self.parent_window = parent
+        self.on_close_callback = on_close_callback
+
+        self.login_finished.connect(self._on_login_finished)
+
+        self._build_ui()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+
+        self.chk_sync = QCheckBox("Habilitar sincronización automática")
+        self.chk_sync.setChecked(db.get("global.cloud_sync_enabled", default=False))
+        self.chk_sync.toggled.connect(self._toggle_clouding)
+        layout.addWidget(self.chk_sync)
+
+        self.account_label = QLabel(self._get_account_info())
+        self.account_label.setObjectName("cloudAccountLabel")
+        layout.addWidget(self.account_label)
+
+        self.btn_change_account = QPushButton("🔄 Cambiar cuenta")
+        self.btn_change_account.clicked.connect(self._change_account)
+        layout.addWidget(self.btn_change_account)
+
+    def _get_account_info(self):
+        return db.get("global.email") 
+
+    # ------------------------------------------------------------------
+    def _toggle_clouding(self, checked):
+        db.set("global.cloud_sync_enabled", checked)
+        if checked and db.get("global.email") is None:
+            self._confirm("Serás redirigido al navegador", "¿Estás seguro?", self._recall_token)
+
+    def _change_account(self):
+        title = "Deberás volver a iniciar sesión" if db.get("global.email") is not None \
+            else "Serás redirigido al navegador"
+        self._confirm(title, "¿Estás seguro?", self._recall_token)
+
+    def _confirm(self, title, message, callback):
+        dlg = ConfirmDialog(self, title=title, message=message, callback=callback)
+        dlg.exec()
+
+    # ------------------------------------------------------------------
+    def _recall_token(self, respond: bool):
+        if not respond:
+            return
+        
+        print(respond)
+
+        self.setEnabled(False)  # feedback: bloquear mientras corre el login
+
+        def worker():
+            token_path = DATA_DIR / "token.json"
+            if not db.get("global.cloud_sync_enabled"):
+                db.set("global.cloud_sync_enabled", True)
+            
+            if token_path.exists():
+                token_path.unlink() # no funciona, tengo que borrar el token.json a mano, recien ahi redirige.
+            
+            try:
+                service, creds = get_drive_service()
+                call_merge()
+
+            except Exception:
+                logging.exception("Fallo el login/merge de cloud")  # ← acá, ver el traceback real
+                self.login_finished.emit(False, "")
+                return
+            
+            self.login_finished.emit(True)
+
+        safe_thread(worker)
+
+    def _on_login_finished(self, ok: bool):
+        self.setEnabled(True)
+        if not ok:
+            return
+        self.account_label.setText(self._get_account_info())
+        self.parent_window.update_title_label() implementar
+        self.accept()  # cierra el diálogo
+
 # Ventana principal
-# ===========================================================================
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -531,6 +619,7 @@ class MainWindow(QMainWindow):
         self.btn_add_platform = QPushButton("Agregar Plataforma")
         self.btn_add_platform.clicked.connect(self.add_platform)
         self.btn_sync = QPushButton("Cloud")
+        self.btn_sync.clicked.connect(self._open_cloud_settings)
         layout.addWidget(self.btn_add_platform)
         layout.addWidget(self.btn_sync)
  
@@ -554,6 +643,10 @@ class MainWindow(QMainWindow):
         self._add_platform_tab(data)
         self.tab_widget.setCurrentIndex(self.tab_widget.count() - 1)
  
+    def _open_cloud_settings(self):
+        dlg = CloudSettingsWindow(self)
+        dlg.exec()
+
     # ------------------------------------------------------------------
     def _on_tab_close_requested(self, index: int):
         platform_name = self.tab_widget.tabText(index)
@@ -647,9 +740,7 @@ def reload_with_thread(ui, on_callback):
     ui.worker_thread.start()
 
 
-# ===========================================================================
 # Entry point
-# ===========================================================================
 class NewLauncherUI:
     def launch_ui():
         app = QApplication(sys.argv)

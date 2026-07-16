@@ -64,9 +64,15 @@ def get_drive_service():
         with open(TOKEN_PATH, "w", encoding="utf-8") as token_file:
             token_file.write(creds.to_json())
 
+    save_email_to_db(creds)
     service = build("drive", "v3", credentials=creds)
     return service, creds
 
+def save_email_to_db(creds):
+    service = build("oauth2", "v2", credentials=creds)
+    user_info = service.userinfo().get().execute()
+    user_info = user_info.get("email", "desconocido")
+    db.set("global.email", user_info)
 
 def get_or_create_folder(service):
     query = f"name='{DRIVE_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false"

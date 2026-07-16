@@ -14,10 +14,10 @@ from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageTk
 from googleapiclient.discovery import build
 
-from safe_threading import safe_thread
 from machine_id import get_machine_id
 from icon_utils import IconUIAdapter, load_icon
 from custommenus import ConfirmDialog
+from safe_threading import safe_thread
 from cloudsync import get_drive_service, call_merge
 from helpers import Loader, GameLauncherController, reload_in_thread, collect_platform_data, safe_askdirectory
 from datafiles import DATA_DIR, ICONS_CACHE_DIR, ICONS, CONFIG_FILE, db, notes_db
@@ -269,7 +269,6 @@ class DraggableNotebook(tb.Notebook):
         self.platform_frames = {}
         self.platform_trees = {}
         self.loader = Loader()
-        self.service = None
                         
         # este frame se usa cuando no hay tabs (plataformas)
         self.empty_frame = tb.Frame(self)
@@ -445,7 +444,7 @@ class DraggableNotebook(tb.Notebook):
 
     def open_cloud_settings(self):
         self.empty_frame.pack_forget()
-        CloudSettingsWindow(self, self.service, on_close_callback=self.emptyframe).pack()
+        CloudSettingsWindow(self, on_close_callback=self.emptyframe).pack()
            
 class GamePlatformFrame(ttk.Frame):
     def __init__(self, master, platform_name, *args, **kwargs):
@@ -1256,10 +1255,9 @@ class PropertiesWindow(custommenus.AutoCloseFrame):
                 return
 
 class CloudSettingsWindow(custommenus.AutoCloseFrame):
-    def __init__(self, parent, service=None, folder_id=None, on_close_callback=None, **kwargs):
+    def __init__(self, parent, folder_id=None, on_close_callback=None, **kwargs):
         super().__init__(parent, on_close_callback=on_close_callback, **kwargs)
         self.on_close_callback = on_close_callback
-        self.service = service
         self.folder_id = folder_id
         self.parent = parent
         
@@ -1330,17 +1328,10 @@ class CloudSettingsWindow(custommenus.AutoCloseFrame):
                 except Exception:
                     return
                 
-                self.service = service
-                self.parent.service = self.service
-                db.set("global.email", self.get_user_email(creds))
                 self.parent.after(0, lambda: self.master.master.update_title_label())
 
         safe_thread(worker)
             
-    def get_user_email(self, creds):
-        service = build("oauth2", "v2", credentials=creds)
-        user_info = service.userinfo().get().execute()
-        return user_info.get("email", "desconocido")
 
 def update_ui(target):
     notebook = target.app.notebook

@@ -14,17 +14,19 @@ def main():
         launcher_controler.launch_game(game_name)
             
     else:
-        if db.get("global.cloud_sync_enabled"):
-            def call_update(data):
-                update_ui(launcherui)
-            
-            call_merge(callback= call_update)
+ 
 
-        start_tk_ui()
+        #start_tk_ui()
         
-        #start_qt_ui()
+        start_qt_ui()
 
 def start_tk_ui():
+    if db.get("global.cloud_sync_enabled"):
+        def call_update(data):
+            update_ui(launcherui)
+            
+        call_merge(callback= call_update)
+
     init("Tk")
     launcherui = LauncherUI().set()
 
@@ -53,4 +55,7 @@ guardar iconos de acc directo en .local/share/applications/icons
 self.parent.favorites_panel.refresh() revisar esto dentro de gamedetailspanel, intentar con signal
 hacer bien lo de agregar steam_id (se ve horrible)
 para esto se va a implementar una ventana nueva con opciones sobre los juegos 
+
+El email no se actualiza en cloudsettings ni ventana principal al cambiarlo o agregarlo.
 """
+

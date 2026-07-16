@@ -22,14 +22,6 @@ def load_icon(path, size=(16,16)):
     return ImageTk.PhotoImage(img)
 
 def ico_to_png(ico_path, output_dir=None, size=(256,256)):
-    """
-    Convierte un archivo .ico a .png, evitando regenerar si ya existe.
-    
-    :param ico_path: Ruta del archivo .ico (Path o str)
-    :param output_dir: Directorio donde guardar el .png (por defecto el mismo del .ico)
-    :param size: Tamaño del .png generado (ancho, alto)
-    :return: Ruta del archivo .png generado (Path)
-    """
     ico_path = Path(ico_path)
     if not ico_path.exists():
         raise FileNotFoundError(f"No se encontró el archivo: {ico_path}")
@@ -43,7 +35,7 @@ def ico_to_png(ico_path, output_dir=None, size=(256,256)):
 
     png_path = output_dir / (ico_path.stem + ".png")
 
-    # ❗ Si ya existe, no lo volvemos a generar
+    #Si ya existe, no lo volvemos a generar
     if png_path.exists():
         return png_path
 

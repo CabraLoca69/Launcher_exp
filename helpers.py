@@ -7,15 +7,16 @@ import sys
 import json
 import glob
 from pathlib import Path
-from safe_threading import safe_thread
 from datetime import datetime
 from tkinter import filedialog
+
 from machine_id import get_machine_id
 from cloudsync import call_upload
+from safe_threading import safe_thread
 from icon_utils import load_icon, IconUIAdapter
 from datafiles import ICONS, ICONS_CACHE_DIR, db
 from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
-from PySide6.QtCore import QObject, Signal, QThread
+from interface_files.event_bus_factory import get_event_bus
 
 class Loader:
     def __init__(self):
@@ -41,7 +42,7 @@ class Loader:
     def scan_for_games(self, platform_name):
         ignore_keywords = [
             kw.lower() for kw in [
-                "vc_redist", "unins", "setup", "install", "dxsetup",
+                "vc_redist", "unins", "setup", "install", "dxsetup", "report",
                 "dotnet", "readme", "helper", "support", "launcher", "win64"
             ]
         ]
@@ -86,7 +87,6 @@ class Loader:
         for icon_file in glob.glob(icon_pattern):
             try:
                 os.remove(icon_file)
-                #print(f"Icono eliminado: {icon_file}")
 
             except OSError as e:
                 print(f"No se pudo eliminar {icon_file}: {e}")
@@ -108,9 +108,7 @@ class GameLauncherController:
         
         self.already_saved = {}
         self.lock = threading.Lock()
-        self.ui_registry = {}
-        self.update_thread_running = False
-        #agrego el runner que se encarga de lanzar los programas
+        self.event_bus = get_event_bus()
         self.runner = PLATFORM_METHODS[CURRENT_OS]["runner"]()
 
         GameLauncherController._initalized = True
@@ -260,7 +258,7 @@ class GameLauncherController:
             sessions_list = sessions_list[-5:]
             db.set(base, sessions_list)
 
-            db.set(f"global.update_ui.{platform_name}", game_name)
+            self.event_bus.notify_game_closed(platform_name, game_name)
 
         self.already_saved.pop(game_name, None)
 
@@ -268,27 +266,8 @@ class GameLauncherController:
             time.sleep(2)
             call_upload()
 
-    def update_watcher(self):
-        while True:
-            time.sleep(2)
-
-            for platform_name, ui in list(self.ui_registry.items()):
-                game_name = db.get(f"global.update_ui.{platform_name}")
-                if not game_name:
-                    continue
-
-                db.delete(f"global.update_ui.{platform_name}")
-
-                try:
-                    ui.update_on_close(game_name, platform_name)
-                except Exception as e:
-                    logging.error(f"Error updating UI for {platform_name}: {e}")
-
     def register_ui(self, platform, ui_instance):
-        self.ui_registry[platform] = ui_instance
-        if not self.update_thread_running:
-            self.update_thread_running = True
-            safe_thread(self.update_watcher)
+        self.event_bus.register_ui(platform, ui_instance)
 
 def safe_askdirectory():
     try:
@@ -389,38 +368,3 @@ def collect_platform_data(platform_name):
                 result["recent"].append(game_info)
         else:
             result["recent"].append(game_info)"""
-            
-class ReloadWorker(QObject):
-    finished = Signal(list)      # Para enviar all_data al UI
-
-    def run(self):
-        all_data = []
-
-        tab_order = db.get("global.tab_order", [])
-
-        for platform_name in tab_order:
-            self.progress.emit(f"Cargando {platform_name}...")
-
-            data = collect_platform_data(platform_name)
-            all_data.append(data)
-
-        self.finished.emit(all_data)
-    
-    def reload_with_thread(ui, on_callback):
-        ui.worker_thread = QThread()
-        ui.worker = ReloadWorker()
-
-        ui.worker.moveToThread(ui.worker_thread)
-
-        # Cuando arranca → worker.run
-        ui.worker_thread.started.connect(ui.worker.run)
-
-        # Cuando termina → callback UI
-        ui.worker.finished.connect(on_callback)
-
-        # Cuando termina → destrucción del thread
-        ui.worker.finished.connect(ui.worker_thread.quit)
-        ui.worker.finished.connect(ui.worker.deleteLater)
-        ui.worker_thread.finished.connect(ui.worker_thread.deleteLater)
-
-        ui.worker_thread.start()

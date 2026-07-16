@@ -87,7 +87,6 @@ class LinuxWineRunner(GameRunner):
                 return False
 
             last_base = os.path.basename(cmd[0]).lower()
-            print(f"last: {last_base}")
 
             if expected_exe not in last_base:
                 return False

@@ -75,12 +75,12 @@ class LinuxShortcutCreator(ShortcutCreator):
         icon_target = self._resolve_icon(game_exe_path, game_name)
 
         content = f"""[Desktop Entry]
-                        Name={game_name}
-                        Comment=Lanzador Cl69
-                        Exec="{launcher_path}" --launch "{game_name}"
-                        Icon={icon_target}
-                        Terminal=false
-                        Type=Application"""
+Name={game_name}
+Comment=Lanzador Cl69
+Exec="{launcher_path}" --launch "{game_name}"
+Icon={icon_target}
+Terminal=false
+Type=Application"""
 
         file_path.write_text(content)
         os.chmod(file_path, 0o755)
@@ -97,14 +97,13 @@ class LinuxShortcutCreator(ShortcutCreator):
         icon_target = self._resolve_icon(game_path, game_name)
 
         content = f"""[Desktop Entry]
-                    Type=Application
-                    Name={game_name}
-                    Exec={command}
-                    Icon={icon_target}
-                    Terminal=false
-                    Categories=Game;
-                    StartupNotify=true
-                    """
+Type=Application
+Name={game_name}
+Exec={command}
+Icon={icon_target}
+Terminal=false
+Categories=Game;
+StartupNotify=true"""
 
         file_path.write_text(content)
         os.chmod(file_path, 0o755)

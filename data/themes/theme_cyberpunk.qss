@@ -1,0 +1,462 @@
+/* ============================================================
+   CLauncher69 — Tema Oscuro / Cyberpunk
+   Paleta: fondo #0d0d12, acento cyan #00e5ff, magenta #ff2d78
+   ============================================================ */
+
+/* ── Variables globales (simuladas con repetición de valores) ── */
+
+/* ── Reset base ──────────────────────────────────────────────── */
+* {
+    font-family: "Segoe UI", "Inter", sans-serif;
+    font-size: 13px;
+    color: #c8d0e0;
+    outline: none;
+    border: none;
+}
+
+QMainWindow, QWidget {
+    background-color: #0d0d12;
+    color: #c8d0e0;
+}
+
+/* ── Header ──────────────────────────────────────────────────── */
+QWidget#header {
+    background-color: #10101a;
+    border-bottom: 1px solid #00e5ff30;
+    min-height: 44px;
+}
+
+QWidget#header QLabel {
+    color: #4a5568;
+    font-size: 12px;
+}
+
+/* ── Botones generales ───────────────────────────────────────── */
+QPushButton {
+    background-color: transparent;
+    color: #00e5ff;
+    border: 1px solid #00e5ff40;
+    border-radius: 4px;
+    padding: 5px 14px;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+}
+
+QPushButton:hover {
+    background-color: #00e5ff15;
+    border-color: #00e5ff80;
+    color: #40f0ff;
+}
+
+QPushButton:pressed {
+    background-color: #00e5ff25;
+    border-color: #00e5ff;
+}
+
+QPushButton:disabled {
+    color: #2a3040;
+    border-color: #1a1f2e;
+}
+
+/* ── Botón play principal ────────────────────────────────────── */
+QPushButton#btnPlay {
+    background-color: #00e5ff18;
+    color: #00e5ff;
+    border: 1px solid #00e5ff60;
+    border-radius: 4px;
+    font-weight: bold;
+    font-size: 12px;
+    padding: 5px 0;
+}
+
+QPushButton#btnPlay:hover {
+    background-color: #00e5ff30;
+    border-color: #00e5ff;
+    color: #fff;
+}
+
+QPushButton#btnPlay:pressed {
+    background-color: #00e5ff45;
+}
+
+/* ── Botones ícono (★ ⋯ ⚙) ───────────────────────────────────── */
+QPushButton#btnIconAction {
+    background-color: transparent;
+    color: #3a4255;
+    border: 1px solid #1e2535;
+    border-radius: 4px;
+    padding: 4px;
+    font-size: 14px;
+}
+
+QPushButton#btnIconAction:hover {
+    background-color: #ff2d7815;
+    border-color: #ff2d7860;
+    color: #ff2d78;
+}
+
+QPushButton#btnIconAction:pressed {
+    background-color: #ff2d7830;
+    color: #ff6090;
+}
+
+/* ── Botón play pequeño (favoritos) ─────────────────────────── */
+QPushButton#btnPlaySmall {
+    background-color: transparent;
+    color: #00e5ff60;
+    border: 1px solid #00e5ff25;
+    border-radius: 3px;
+    font-size: 11px;
+    padding: 2px;
+}
+
+QPushButton#btnPlaySmall:hover {
+    background-color: #00e5ff18;
+    color: #00e5ff;
+    border-color: #00e5ff70;
+}
+
+/* ── Tabs ────────────────────────────────────────────────────── */
+QTabWidget::pane {
+    background-color: #0d0d12;
+    border: 1px solid #00e5ff20;
+    border-top: none;
+}
+
+QTabBar {
+    background-color: #10101a;
+}
+
+QTabBar::tab {
+    background-color: transparent;
+    color: #4a5568;
+    padding: 8px 20px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    font-size: 12px;
+    letter-spacing: 0.3px;
+    min-width: 100px;
+}
+
+QTabBar::tab:selected {
+    color: #00e5ff;
+    border-bottom: 2px solid #00e5ff;
+    background-color: #00e5ff08;
+}
+
+QTabBar::tab:hover:!selected {
+    color: #8899bb;
+    background-color: #ffffff05;
+}
+
+QTabBar::close-button {
+    image: none;
+    subcontrol-position: right;
+    width: 14px;
+    height: 14px;
+    border-radius: 2px;
+    margin-left: 6px;
+}
+
+QTabBar::close-button:hover {
+    background-color: #ff2d7840;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────── */
+QWidget#sidebar {
+    background-color: #0a0a10;
+    border-right: 1px solid #00e5ff18;
+}
+
+/* ── Barra de búsqueda ───────────────────────────────────────── */
+QLineEdit {
+    background-color: #13131f;
+    color: #c8d0e0;
+    border: 1px solid #1e2535;
+    border-radius: 4px;
+    padding: 6px 10px;
+    selection-background-color: #00e5ff30;
+    selection-color: #ffffff;
+}
+
+QLineEdit:focus {
+    border-color: #00e5ff50;
+    background-color: #16162a;
+}
+
+QLineEdit:hover {
+    border-color: #00e5ff30;
+}
+
+/* ── Árbol de juegos ─────────────────────────────────────────── */
+QTreeWidget {
+    background-color: transparent;
+    color: #8899bb;
+    border: none;
+    alternate-background-color: #0f0f18;
+    show-decoration-selected: 1;
+}
+
+QTreeWidget::item {
+    padding: 5px 8px;
+    border-radius: 3px;
+    border: none;
+}
+
+QTreeWidget::item:hover {
+    background-color: #00e5ff0d;
+    color: #c8d0e0;
+}
+
+QTreeWidget::item:selected {
+    background-color: #00e5ff18;
+    color: #00e5ff;
+    border-left: 2px solid #00e5ff;
+}
+
+QTreeWidget::item:selected:hover {
+    background-color: #00e5ff22;
+}
+
+QHeaderView::section {
+    background-color: #10101a;
+    color: #3a4255;
+    border: none;
+    border-bottom: 1px solid #1e2535;
+    padding: 6px 8px;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+/* ── Panel detalle (derecha) ─────────────────────────────────── */
+QWidget#gameDetailPanel {
+    background-color: #0d0d12;
+}
+
+QWidget#detailTopBar {
+    background-color: #10101a;
+    border-bottom: 1px solid #00e5ff15;
+    min-height: 48px;
+}
+
+QLabel#gameNameLabel {
+    color: #e0e8f0;
+    font-size: 14px;
+    font-weight: bold;
+    letter-spacing: 0.3px;
+}
+
+QFrame#detailSeparator {
+    background-color: #00e5ff18;
+    max-height: 1px;
+    border: none;
+}
+
+QLabel#sectionTitle {
+    color: #3a4a60;
+    font-size: 11px;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+}
+
+/* ── Filas de sesión ─────────────────────────────────────────── */
+QWidget#sessionRow {
+    background-color: transparent;
+    border-radius: 3px;
+}
+
+QWidget#sessionRow:hover {
+    background-color: #00e5ff08;
+}
+
+QLabel#sessionDate {
+    color: #4a5568;
+    font-size: 12px;
+}
+
+QLabel#sessionDuration {
+    color: rgba(0, 229, 255, 128);  
+    font-size: 12px;
+    font-weight: bold;
+}
+
+/* ── Panel favoritos ─────────────────────────────────────────── */
+QWidget#favoritesPanel {
+    background-color: #0d0d12;
+}
+
+QLabel#favoritesPanelTitle {
+    color: #ff2d78;
+    font-size: 14px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #ff2d7825;
+    margin-bottom: 4px;
+}
+
+QWidget#favoriteRow {
+    background-color: #10101a;
+    border: 1px solid #1e2535;
+    border-radius: 4px;
+}
+
+QWidget#favoriteRow:hover {
+    background-color: #13131f;
+    border-color: #ff2d7840;
+}
+
+QLabel#favoriteGameName {
+    color: #a0aec0;
+    font-size: 12px;
+}
+
+QLabel#favoriteGameHours {
+    color: rgba(0, 229, 255, 128); 
+    font-size: 11px;
+    font-weight: bold;
+}
+
+/* ── Hint vacío ──────────────────────────────────────────────── */
+QLabel#emptyHint {
+    color: #2a3040;
+    font-size: 12px;
+    font-style: italic;
+}
+
+/* ── Scroll bars ─────────────────────────────────────────────── */
+QScrollBar:vertical {
+    background-color: transparent;
+    width: 6px;
+    margin: 0;
+}
+
+QScrollBar::handle:vertical {
+    background-color: #1e2535;
+    border-radius: 3px;
+    min-height: 24px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background-color: #00e5ff30;
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    height: 0;
+    background: none;
+}
+
+QScrollBar:horizontal {
+    background-color: transparent;
+    height: 6px;
+    margin: 0;
+}
+
+QScrollBar::handle:horizontal {
+    background-color: #1e2535;
+    border-radius: 3px;
+    min-width: 24px;
+}
+
+QScrollBar::handle:horizontal:hover {
+    background-color: #00e5ff30;
+}
+
+QScrollBar::add-line:horizontal,
+QScrollBar::sub-line:horizontal {
+    width: 0;
+    background: none;
+}
+
+/* ── Popups / Diálogos ───────────────────────────────────────── */
+QDialog {
+    background-color: #13131f;
+    border: 1px solid #00e5ff30;
+    border-radius: 6px;
+}
+
+QLabel#inputDialogPrompt {
+    color: #8899bb;
+    font-size: 13px;
+    font-weight: bold;
+    letter-spacing: 0.3px;
+}
+
+QLabel#confirmDialogTitle {
+    color: #e0e8f0;
+    font-size: 14px;
+    font-weight: bold;
+    letter-spacing: 0.3px;
+}
+
+QLabel#confirmDialogMessage {
+    color: #6a7a95;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+/* ── Botones de acción en diálogos ───────────────────────────── */
+QPushButton#btnSuccess {
+    background-color: #00e5ff18;
+    color: #00e5ff;
+    border: 1px solid #00e5ff50;
+    border-radius: 4px;
+    padding: 6px 16px;
+    font-weight: bold;
+}
+
+QPushButton#btnSuccess:hover {
+    background-color: #00e5ff30;
+    border-color: #00e5ff;
+    color: #fff;
+}
+
+QPushButton#btnDanger {
+    background-color: #ff2d7818;
+    color: #ff2d78;
+    border: 1px solid #ff2d7850;
+    border-radius: 4px;
+    padding: 6px 16px;
+    font-weight: bold;
+}
+
+QPushButton#btnDanger:hover {
+    background-color: #ff2d7830;
+    border-color: #ff2d78;
+    color: #fff;
+}
+
+/* ── Menú contextual flotante ────────────────────────────────── */
+QFrame#customPopupMenu {
+    background-color: #13131f;
+    border: 1px solid #00e5ff30;
+    border-radius: 5px;
+    padding: 2px;
+}
+
+QFrame#customPopupMenu QPushButton {
+    background-color: transparent;
+    color: #8899bb;
+    border: none;
+    border-radius: 3px;
+    padding: 7px 14px;
+    text-align: left;
+    font-size: 12px;
+}
+
+QFrame#customPopupMenu QPushButton:hover {
+    background-color: #00e5ff12;
+    color: #00e5ff;
+}
+
+/* ── Tooltip ─────────────────────────────────────────────────── */
+QToolTip {
+    background-color: #13131f;
+    color: #c8d0e0;
+    border: 1px solid #00e5ff30;
+    border-radius: 3px;
+    padding: 4px 8px;
+    font-size: 11px;
+}

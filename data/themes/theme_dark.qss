@@ -49,3 +49,25 @@ QTabBar::tab {
 QTabBar::tab:selected {
     background: #555;
 }
+
+customPopupMenu { 
+        background: #2b2b2b;
+        border: 1px solid #555; 
+        border-radius: 6px; 
+}
+
+confirmDialogTitle { 
+    font-size: 14px; 
+    font-weight: bold; 
+    color: #f0c040; 
+}
+
+btnSuccess { 
+    background: #2d6a2d; 
+    color: white; 
+}
+
+btnDanger  { background: transparent; 
+    color: #e05555; 
+    border: 1px solid #e05555; 
+}

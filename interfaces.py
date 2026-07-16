@@ -10,17 +10,18 @@ import ttkbootstrap as tb
 import tkinter as tk
 from pathlib import Path
 from datetime import datetime
-from safe_threading import safe_thread
 from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageTk
 from googleapiclient.discovery import build
+
+from safe_threading import safe_thread
 from machine_id import get_machine_id
 from icon_utils import IconUIAdapter, load_icon
-from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
 from custommenus import ConfirmDialog
 from cloudsync import get_drive_service, call_merge
 from helpers import Loader, GameLauncherController, reload_in_thread, collect_platform_data, safe_askdirectory
 from datafiles import DATA_DIR, ICONS_CACHE_DIR, ICONS, CONFIG_FILE, db, notes_db
+from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
 
 
 class SplashFrame(tb.Frame):
@@ -461,6 +462,7 @@ class GamePlatformFrame(ttk.Frame):
         self.menucreator = PLATFORM_METHODS[CURRENT_OS]["menu"]()
         self.file_walker = PLATFORM_METHODS[CURRENT_OS]["paths"]()
         self.ProviderOfIcons = PLATFORM_METHODS[CURRENT_OS]["icons"]()
+        db.ensure(f"{platform_name}.favorites", [])
         
         self.rowconfigure(0, weight=0)
         self.rowconfigure(1, weight=1)
@@ -697,7 +699,7 @@ class GamePlatformFrame(ttk.Frame):
             self.menu_popup.destroy()
     
         platform_name = self.platform_name
-        favorites = db.ensure(f"{platform_name}.favorites", [])
+        favorites = db.get(f"{platform_name}.favorites", False)
 
         if game_name in favorites:
             new_favs = [g for g in favorites if g != game_name]
@@ -910,7 +912,6 @@ class GameDetailsPanel(tb.Frame):
                     # Pequeña fila con ícono + nombre
                     frame = tb.Frame(self)
                     frame.pack(fill="x", padx=20, pady=5)
-
                     icon = IconUIAdapter(self.ProviderOfIcons).get_icon(path)
 
                     if icon:
@@ -1416,26 +1417,7 @@ def populate_ui(all_data, target, select_new= True):
             tree.icon_images[g["name"]] = icon_img
             
             tree.insert("", "end", iid=g["name"], text="", image= icon_img , values=(g["name"],))
-            
-        #Favoritos
-        #fav_node = tree.insert("", "end", text="★ Favoritos", open=True)
-        #for g in pdata["favorites"]:
-            #tree.icon_images[g["name"]] = g["icon"]
-            #tree.insert(fav_node, "end", iid=g["name"], text="", image=g["icon"], values=(g["name"],))
-
-        # Recientes
-        #rec_node = tree.insert("", "end", text="⏱ Recientes", open=False)
-        #for g in pdata["recent"]:
-            #tree.icon_images[g["name"]] = g["icon"]
-            #tree.insert(rec_node, "end", iid=g["name"], text="", image=g["icon"], values=(g["name"],))
-                
-        # Por mes
-        #for month, juegos in pdata["by_month"].items():
-            #node = tree.insert("", "end", text=f"📆 {month}", open=False)
-            #for g in juegos:
-                #tree.icon_images[g["name"]] = g["icon"]
-                #tree.insert(node, "end", iid=g["name"], text="", image=g["icon"], values=(g["name"],))"""
-            
+                       
     for pdata in all_data:
         platform_name = pdata["platform"]
         

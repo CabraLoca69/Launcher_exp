@@ -1,4 +1,5 @@
 import uuid
+
 from datafiles import MACHINE_ID_FILE
 
 def get_machine_id():

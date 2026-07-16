@@ -39,8 +39,46 @@ def has_internet_http(url: str = "https://www.google.com", timeout: int = 5) -> 
 # -------------------------
 # Google Drive auth & folder
 # -------------------------
+def login_and_sync(force_new_account: bool = False):
+    backup_path = None
+    last_email = db.get("global.email")
+    if force_new_account and TOKEN_PATH.exists():
+        backup_path = TOKEN_PATH.with_suffix(".json.bak")
+        TOKEN_PATH.replace(backup_path)
+    
+    def _rollback():
+        db.set("global.email", last_email)
+        if backup_path and backup_path.exists():
+            backup_path.replace(TOKEN_PATH)
+
+    try:
+        get_drive_service()
+    except Exception:
+        logging.exception("Fallo el login/merge de cloud")
+        _rollback()
+        return False
+
+    # get_drive_service no tiró excepción, pero eso no garantiza
+    # que el login haya terminado bien (ej: usuario cerró la pestaña)
+    if db.get("global.email") == "Desconocido":
+        logging.error("Login incompleto o cancelado (email sigue en 'Desconocido')")
+        _rollback()
+        return False
+
+    try:
+        call_merge()
+    except Exception:
+        logging.exception("Fallo el merge tras login exitoso")
+        return False
+
+    if backup_path and backup_path.exists():
+        backup_path.unlink()
+
+    return True
+
 def get_drive_service():
     creds = None
+    db.set("global.email", "Desconocido")
     if TOKEN_PATH.exists():
         try:
             creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
@@ -58,7 +96,7 @@ def get_drive_service():
         if not creds:
             # flujo interactivo en local
             flow = InstalledAppFlow.from_client_secrets_file(str(CREDENTIALS_PATH), SCOPES)
-            creds = flow.run_local_server(port=0)
+            creds = flow.run_local_server(port=0, timeout_seconds=60)
 
         # persistir token
         with open(TOKEN_PATH, "w", encoding="utf-8") as token_file:
@@ -66,12 +104,12 @@ def get_drive_service():
 
     save_email_to_db(creds)
     service = build("drive", "v3", credentials=creds)
-    return service, creds
+    return service
 
 def save_email_to_db(creds):
     service = build("oauth2", "v2", credentials=creds)
     user_info = service.userinfo().get().execute()
-    user_info = user_info.get("email", "desconocido")
+    user_info = user_info.get("email", "Desconocido")
     db.set("global.email", user_info)
 
 def get_or_create_folder(service):
@@ -262,7 +300,7 @@ def download_and_merge_backup():
             logging.info("No hay conexión. Abortando descarga merge.")
             return read_full_config_from_db()
 
-        service, creds = get_drive_service()
+        service = get_drive_service()
         folder_id = get_or_create_folder(service)
         cloud = download_backup(service, folder_id)
         if not cloud:
@@ -301,7 +339,7 @@ def call_upload():
                 logging.info("No internet, abort upload.")
                 return
 
-            service, creds = get_drive_service()
+            service = get_drive_service()
             folder_id = get_or_create_folder(service)
             existing = download_backup(service, folder_id) or {}
             payload = build_cloud_payload_for_upload(existing)
@@ -317,7 +355,7 @@ def call_download():
     if not has_internet_http():
         return {}
     try:
-        service, creds = get_drive_service()
+        service = get_drive_service()
         folder_id = get_or_create_folder(service)
         return download_backup(service, folder_id)
     except Exception:

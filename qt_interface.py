@@ -16,12 +16,12 @@ import logging
 
 from datafiles import DATA_DIR
 from safe_threading import safe_thread
-from cloudsync import get_drive_service, call_merge
+from cloudsync import login_and_sync, call_merge
 from helpers import Loader, collect_platform_data, GameLauncherController
 from qicon_utils import QIconUIAdapter, load_qicon
-from datafiles import THEMES_DIR, db
+from datafiles import THEMES_DIR, TOKEN_PATH, db
 from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
-from qpopups import ConfirmDialog, CustomPopupMenu
+from qpopups import InputDialog, ConfirmDialog, CustomPopupMenu
 
 # Panel de favoritos
 class FavoritesPanel(QWidget):
@@ -407,7 +407,7 @@ class PlatformTab(QWidget):
         menu.add_button("Jugar",          command=lambda: self._on_game_double_clicked(item, 0))
         menu.add_button("Abrir carpeta",  command=lambda: self._open_game_folder(game_name))
         menu.add_button("Eliminar",       command=self._delete_selected_item)
-        menu.show_at(global_pos)
+        menu.show_at(global_pos, offset_x=2, offset_y=84)
    
     # ------------------------------------------------------------------
     def fill_games(self, games: list):
@@ -496,9 +496,6 @@ class CloudSettingsWindow(QDialog):
         self.btn_change_account.clicked.connect(self._change_account)
         layout.addWidget(self.btn_change_account)
 
-    def _get_account_info(self):
-        return db.get("global.email") 
-
     # ------------------------------------------------------------------
     def _toggle_clouding(self, checked):
         db.set("global.cloud_sync_enabled", checked)
@@ -519,38 +516,36 @@ class CloudSettingsWindow(QDialog):
         if not respond:
             return
         
-        print(respond)
-
-        self.setEnabled(False)  # feedback: bloquear mientras corre el login
+        self.chk_sync.setEnabled(False) # bloqueamos mientras corre el login
+        self.btn_change_account.setEnabled(False)
 
         def worker():
-            token_path = DATA_DIR / "token.json"
             if not db.get("global.cloud_sync_enabled"):
                 db.set("global.cloud_sync_enabled", True)
             
-            if token_path.exists():
-                token_path.unlink() # no funciona, tengo que borrar el token.json a mano, recien ahi redirige.
-            
             try:
-                service, creds = get_drive_service()
-                call_merge()
+                loged_in = login_and_sync(force_new_account=True)
 
             except Exception:
-                logging.exception("Fallo el login/merge de cloud")  # ← acá, ver el traceback real
-                self.login_finished.emit(False, "")
+                logging.exception("Fallo el login/merge de cloud")  
+                self.login_finished.emit(False)
                 return
             
-            self.login_finished.emit(True)
+            self.login_finished.emit(loged_in)
 
         safe_thread(worker)
 
     def _on_login_finished(self, ok: bool):
-        self.setEnabled(True)
+        self.chk_sync.setEnabled(True) #login terminado, desbloqueamos
+        self.btn_change_account.setEnabled(True)
         if not ok:
             return
         self.account_label.setText(self._get_account_info())
-        self.parent_window.update_title_label() implementar
-        self.accept()  # cierra el diálogo
+        self.parent_window.update_title_label()
+        self.accept()
+    
+    def _get_account_info(self):
+        return db.get("global.email") 
 
 # Ventana principal
 class MainWindow(QMainWindow):
@@ -625,6 +620,9 @@ class MainWindow(QMainWindow):
  
         return header
  
+    def update_title_label(self):
+        email = db.get("global.email")
+        self.account_label.setText(f"Cuenta: {email}")
     # ------------------------------------------------------------------
     def add_platform(self):
         result = ask_platform_folder(self)
@@ -645,7 +643,7 @@ class MainWindow(QMainWindow):
  
     def _open_cloud_settings(self):
         dlg = CloudSettingsWindow(self)
-        dlg.exec()
+        dlg.show()
 
     # ------------------------------------------------------------------
     def _on_tab_close_requested(self, index: int):

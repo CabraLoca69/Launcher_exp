@@ -429,14 +429,14 @@ QPushButton#btnDanger:hover {
 }
 
 /* ── Menú contextual flotante ────────────────────────────────── */
-QFrame#customPopupMenu {
+QDialog#customPopupMenu {
     background-color: #13131f;
     border: 1px solid #00e5ff30;
     border-radius: 5px;
     padding: 2px;
 }
 
-QFrame#customPopupMenu QPushButton {
+QDialog#customPopupMenu QPushButton {
     background-color: transparent;
     color: #8899bb;
     border: none;
@@ -446,7 +446,7 @@ QFrame#customPopupMenu QPushButton {
     font-size: 12px;
 }
 
-QFrame#customPopupMenu QPushButton:hover {
+QDialog#customPopupMenu QPushButton:hover {
     background-color: #00e5ff12;
     color: #00e5ff;
 }

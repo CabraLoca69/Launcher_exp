@@ -18,9 +18,9 @@ from machine_id import get_machine_id
 from icon_utils import IconUIAdapter, load_icon
 from custommenus import ConfirmDialog
 from safe_threading import safe_thread
-from cloudsync import get_drive_service, call_merge
+from cloudsync import login_and_sync, call_merge
 from helpers import Loader, GameLauncherController, reload_in_thread, collect_platform_data, safe_askdirectory
-from datafiles import DATA_DIR, ICONS_CACHE_DIR, ICONS, CONFIG_FILE, db, notes_db
+from datafiles import DATA_DIR, ICONS_CACHE_DIR, ICONS, CONFIG_FILE, TOKEN_PATH, db, notes_db
 from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
 
 
@@ -231,7 +231,7 @@ class MainLauncherFrame(tb.Frame):
         top_bar = tb.Frame(self, bootstyle="dark")
         top_bar.pack(fill="x")
 
-        email = db.get("global.email", default= "Desconocido") or "Desconocido"
+        email = db.get("global.email")
 
         self.title_label = tb.Label(top_bar, text=f"Cuenta: {email}", font=("Segoe UI", 11, "bold"), bootstyle="inverse-dark")
         self.title_label.pack(side="left", padx=10, pady=5)
@@ -255,7 +255,7 @@ class MainLauncherFrame(tb.Frame):
         self.notebook.ask_platform_name()
 
     def update_title_label(self):
-        email = db.get("global.email", default= "Desconocido") or "Desconocido"
+        email = db.get("global.email")
         self.title_label.config(text=f"Cuenta: {email}")
         
 class DraggableNotebook(tb.Notebook):
@@ -1291,7 +1291,7 @@ class CloudSettingsWindow(custommenus.AutoCloseFrame):
                     
     # === Funciones de cuenta ===
     def get_account_info(self):
-        return db.get("global.email", default= "Desconocido") or "Desconocido"
+        return db.get("global.email")
     
     def toggle_clouding(self):
         actual_setting = db.get("global.cloud_sync_enabled")
@@ -1314,17 +1314,13 @@ class CloudSettingsWindow(custommenus.AutoCloseFrame):
         def worker():
             if respond:
                 self.destroy()
-                token_path = DATA_DIR / "token.json"
 
                 if not db.get("global.cloud_sync_enabled"):
                     db.set("global.cloud_sync_enabled", True)
-                
-                if token_path.exists():
-                    token_path.unlink()
-                
+                    
                 try:
-                    service, creds = get_drive_service()
-                    call_merge()
+                    login_and_sync(force_new_account=True)
+
                 except Exception:
                     return
                 

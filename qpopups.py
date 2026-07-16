@@ -16,9 +16,9 @@ Diferencias clave con la versión tkinter:
 
 from PySide6.QtWidgets import (
     QDialog, QFrame, QVBoxLayout, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QWidget, QApplication
+    QLabel, QLineEdit, QPushButton, QWidget, QApplication,
 )
-from PySide6.QtCore import Qt, QPoint, QEvent
+from PySide6.QtCore import Qt, QPoint, QEvent, QTimer
 from PySide6.QtGui import QKeyEvent
 
 
@@ -31,22 +31,31 @@ class BasePopup(QDialog):
     Diálogo sin decoración de ventana que se cierra al presionar Escape
     o al hacer click fuera de él. Subclasear y llamar a _respond(value)
     para cerrar con un resultado.
-
-    Args:
-        parent:      widget padre (para centrado relativo)
-        callback:    función llamada con el valor de cierre → callback(value)
     """
 
-    def __init__(self, parent: QWidget = None, callback=None):
+    def __init__(self, parent: QWidget = None, callback=None, modal: bool = True, popup_mode: bool = False):
         super().__init__(parent)
         self.callback = callback
 
-        # Sin bordes de ventana del SO → aspecto consistente con el tema
-        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
-        self.setAttribute(Qt.WA_TranslucentBackground, False)
+        if popup_mode:
+            self.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
+        else:
+            self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
 
-        # Click afuera cierra el diálogo
-        self.setModal(True)
+        self.setAttribute(Qt.WA_TranslucentBackground, False)
+        self.setModal(modal)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        QApplication.instance().installEventFilter(self)
+
+    def hideEvent(self, event):
+        QApplication.instance().removeEventFilter(self)
+        super().hideEvent(event)
+
+    def closeEvent(self, event):
+        QApplication.instance().removeEventFilter(self)
+        super().closeEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key_Escape:
@@ -54,28 +63,23 @@ class BasePopup(QDialog):
         else:
             super().keyPressEvent(event)
 
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.MouseButtonPress:
+            local_pos = self.mapFromGlobal(event.globalPosition().toPoint())
+            if not self.rect().contains(local_pos):
+                self._respond(None)
+        return super().eventFilter(obj, event)
+
     def _respond(self, value):
-        """Cerrar el diálogo y disparar el callback con `value`."""
         self.accept()
         if self.callback:
             self.callback(value)
-
-    # Clic fuera del área del diálogo → cerrar
-    def mousePressEvent(self, event):
-        # En un QDialog modal FramelessWindowHint los clicks fuera
-        # no llegan al widget; este handler cubre el caso de clicks
-        # en el fondo semitransparente si se usa con overlay.
-        if not self.rect().contains(event.pos()):
-            self._respond(None)
-        else:
-            super().mousePressEvent(event)
-
 
 # ===========================================================================
 # MENÚ CONTEXTUAL FLOTANTE
 # Equivalente a CustomPopupMenu — flota sobre el widget padre con place()
 # ===========================================================================
-class CustomPopupMenu(QFrame):
+class CustomPopupMenu(BasePopup):
     """
     Menú flotante posicionado en coordenadas absolutas sobre el padre.
     No es modal; se cierra con Escape o click fuera.
@@ -84,76 +88,49 @@ class CustomPopupMenu(QFrame):
         menu = CustomPopupMenu(parent, on_close_callback=mi_funcion)
         menu.add_button("Editar",    command=editar)
         menu.add_button("Eliminar",  command=eliminar)
-        menu.show_at(event.globalPos())   # QPoint con coords globales
+        menu.show_at(event.globalPos())
     """
 
     def __init__(self, parent: QWidget = None, on_close_callback=None):
-        super().__init__(parent)
-        self.on_close_callback = on_close_callback
-        self._menu_open = False
+        wrapped = (lambda _v: on_close_callback()) if on_close_callback else None
+        super().__init__(parent, callback=wrapped, modal=False, popup_mode=True)
 
-        self.setFrameShape(QFrame.StyledPanel)
-        self.setFrameShadow(QFrame.Raised)
         self.setObjectName("customPopupMenu")
-
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(4, 4, 4, 4)
         self._layout.setSpacing(2)
-
-        # Interceptar clicks globales para cerrar al hacer click afuera
-        QApplication.instance().installEventFilter(self)
 
     def add_button(self, text: str, command, width: int = None):
         btn = QPushButton(text)
         btn.setCursor(Qt.PointingHandCursor)
         if width:
             btn.setFixedWidth(width)
-        btn.clicked.connect(lambda: (command(), self._close()))
+
+        def _on_click():
+            self._respond(None)               # cierra siempre, aunque command falle
+            if command:
+                QTimer.singleShot(0, command)  # corre una vez cerrado el menú
+
+        btn.clicked.connect(_on_click)
         self._layout.addWidget(btn)
 
-    def show_at(self, global_pos: QPoint):
-        """Mostrar el menú en coordenadas globales (ej: event.globalPos())."""
-        if self._menu_open:
-            self._close()
+    def show_at(self, global_pos: QPoint, offset_x: int = 0, offset_y: int = 0):
+        if self.isVisible():
+            self._respond(None)
             return
 
         self.adjustSize()
 
-        # Convertir coords globales a locales del padre
+        adjusted = QPoint(global_pos.x() + offset_x, global_pos.y() + offset_y)
+
         if self.parent():
-            local = self.parent().mapFromGlobal(global_pos)
+            local = self.parent().mapFromGlobal(adjusted)
         else:
-            local = global_pos
+            local = adjusted
 
         self.move(local)
         self.raise_()
         self.show()
-        self._menu_open = True
-
-    def _close(self):
-        if not self._menu_open:
-            return
-        self._menu_open = False
-        QApplication.instance().removeEventFilter(self)
-        self.hide()
-        if self.on_close_callback:
-            self.on_close_callback()
-
-    def keyPressEvent(self, event: QKeyEvent):
-        if event.key() == Qt.Key_Escape:
-            self._close()
-        else:
-            super().keyPressEvent(event)
-
-    # Cerrar si el click fue afuera del frame
-    def eventFilter(self, obj, event):
-        if event.type() == QEvent.MouseButtonPress:
-            if self._menu_open:
-                global_pos = event.globalPosition().toPoint()
-                local = self.mapFromGlobal(global_pos)
-                if not self.rect().contains(local):
-                    self._close()
-        return False  # no consumir el evento
 
 # ===========================================================================
 # DIÁLOGO DE TEXTO

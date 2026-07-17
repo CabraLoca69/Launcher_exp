@@ -20,11 +20,10 @@ class ShortcutCreator:
 #_____________________WINDOWS____________________
 class WindowsShortcutCreator(ShortcutCreator):
 
-    def create_direct_access(self, game_name, destino_desktop=True):
+    def create_direct_access(self, game_name, game_path, destino_desktop=True):
         shell = win32com.client.Dispatch("WScript.Shell")
 
         desktop = shell.SpecialFolders("Desktop") if destino_desktop else os.getcwd()
-        game_exe_path = db.get(f"{self.platform_name}.game_list.{game_name}")
 
         shortcut_path = os.path.join(
             desktop,
@@ -33,15 +32,14 @@ class WindowsShortcutCreator(ShortcutCreator):
 
         shortcut = shell.CreateShortcut(shortcut_path)
         shortcut.TargetPath = sys.executable
-        shortcut.Arguments = f'"{game_exe_path}"'
+        shortcut.Arguments = f'"{game_path}"'
         shortcut.save()
 
-    def create_start_menu_shortcut(self, game_name, icon_path=ICONS):
+    def create_start_menu_shortcut(self, game_name, game_path, icon_path=ICONS):
 
         try:
             launcher_exe = Path(sys.executable).resolve()
             launcher_dir = launcher_exe.parent
-            game_exe_path = db.get(f"{self.platform_name}.game_list.{game_name}")
 
             start_menu = (
                 Path(os.getenv("APPDATA"))
@@ -61,7 +59,7 @@ class WindowsShortcutCreator(ShortcutCreator):
             shortcut.TargetPath = str(launcher_exe)
             shortcut.Arguments = f'--launch "{game_name}"'
             shortcut.WorkingDirectory = str(launcher_dir)
-            shortcut.IconLocation = game_exe_path
+            shortcut.IconLocation = game_path
 
             shortcut.save()
 

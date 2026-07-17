@@ -1,11 +1,13 @@
 import sys
 
-from cloudsync import call_merge
-from interfaces import LauncherUI, update_ui
-from datafiles import db, THEMES_DIR
-from helpers import GameLauncherController
-from qt_interface import NewLauncherUI
+from interface_files.tk_interface import LauncherUI, update_ui
+from interface_files.qt_interface import NewLauncherUI
 from interface_files.ui_handler import init_event_bus
+
+from data_access.cloudsync import call_merge
+from data_access.datafiles import db, THEMES_DIR
+
+from helpers.helpers import GameLauncherController
 
 def main():
     if "--launch" in sys.argv:
@@ -14,8 +16,6 @@ def main():
         launcher_controler.launch_game(game_name)
             
     else:
- 
-
         start_tk_ui()
         
         #start_qt_ui()

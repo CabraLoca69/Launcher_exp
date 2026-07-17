@@ -1,6 +1,8 @@
 import time
-from safe_threading import safe_thread
-from datafiles import db
+
+from helpers.safe_threading import safe_thread
+
+from data_access.datafiles import db
 
 # --- interfaz común ---
 class GameEventBus:

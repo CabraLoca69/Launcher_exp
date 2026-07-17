@@ -10,12 +10,14 @@ from pathlib import Path
 from datetime import datetime
 from tkinter import filedialog
 
-from machine_id import get_machine_id
-from cloudsync import call_upload
-from safe_threading import safe_thread
-from icon_utils import load_icon, IconUIAdapter
-from datafiles import ICONS, ICONS_CACHE_DIR, db
+from data_access.machine_id import get_machine_id
+from data_access.cloudsync import call_upload
+from data_access.datafiles import ICONS, ICONS_CACHE_DIR, db
+
+from helpers.safe_threading import safe_thread
+
 from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
+
 from interface_files.ui_handler import get_event_bus
 
 class Loader:

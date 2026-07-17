@@ -2,7 +2,7 @@ dist/
 data/icons/*.png
 data/icons_cache
 data/databases/
-data/machine_id.txt
+data/cloud_files/machine_id.txt
 __pycache__
 upload_err.txt
 *.bat

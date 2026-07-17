@@ -1,16 +1,9 @@
-import sys
-from pathlib import Path
-from sqlitedb import SQLiteDatabase
+from .sqlitedb import SQLiteDatabase
+from base_path import get_portable_base_dir
 
 # ------------------------------
 # Directorios de datos
 # ------------------------------
-def get_portable_base_dir():
-    if getattr(sys, "frozen", False):  
-        return Path(sys.executable).resolve().parent
-    else:
-        return Path(__file__).resolve().parent
-
 BASE_DIR = get_portable_base_dir()
 
 DATA_DIR = BASE_DIR / "data"
@@ -18,7 +11,7 @@ DB_DIR = DATA_DIR / "databases"
 ICONS_CACHE_DIR = DATA_DIR / "icons_cache"
 ICONS = DATA_DIR / "icons"
 CLOUD = DATA_DIR / "cloud_files"
-MACHINE_ID_FILE = DATA_DIR / "machine_id.txt"
+MACHINE_ID_FILE = CLOUD / "machine_id.txt"
 THEMES_DIR = DATA_DIR / "themes"
 
 # Crear carpetas si no existen

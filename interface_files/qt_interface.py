@@ -14,14 +14,16 @@ import sys
 from pathlib import Path
 import logging
 
-from datafiles import DATA_DIR
-from safe_threading import safe_thread
-from cloudsync import login_and_sync, call_merge
-from helpers import Loader, collect_platform_data, GameLauncherController
-from qicon_utils import load_qicon
-from datafiles import THEMES_DIR, TOKEN_PATH, db
+from data_access.datafiles import DATA_DIR, THEMES_DIR, TOKEN_PATH, db
+from data_access.cloudsync import login_and_sync, call_merge
+
+from helpers.safe_threading import safe_thread
+from helpers.helpers import Loader, collect_platform_data, GameLauncherController
+from helpers.qicon_utils import load_qicon
+
 from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
-from qpopups import InputDialog, ConfirmDialog, CustomPopupMenu
+
+from .qt_popups import InputDialog, ConfirmDialog, CustomPopupMenu
 
 
 class Platform_handler():

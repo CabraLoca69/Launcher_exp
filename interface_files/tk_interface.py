@@ -4,7 +4,6 @@ import logging
 import time
 import sys
 import platform
-import custommenus
 import shutil
 import ttkbootstrap as tb
 import tkinter as tk
@@ -14,19 +13,22 @@ from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageTk
 from googleapiclient.discovery import build
 
-from machine_id import get_machine_id
-from icon_utils import load_icon
-from custommenus import ConfirmDialog
-from safe_threading import safe_thread
-from cloudsync import login_and_sync, call_merge
-from helpers import (Loader, GameLauncherController, rename_platform,
+from . import tk_popups as custommenus
+
+from data_access.machine_id import get_machine_id
+from data_access.cloudsync import login_and_sync, call_merge
+from data_access.datafiles import DATA_DIR, ICONS_CACHE_DIR, ICONS, CONFIG_FILE, TOKEN_PATH, db, notes_db
+
+from helpers.icon_utils import load_icon
+from helpers.safe_threading import safe_thread
+from helpers.helpers import (Loader, GameLauncherController, rename_platform,
                     reload_in_thread, collect_platform_data, safe_askdirectory)
 
-from datafiles import DATA_DIR, ICONS_CACHE_DIR, ICONS, CONFIG_FILE, TOKEN_PATH, db, notes_db
-
 from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
-from interface_files.ui_handler import get_menu_renderer
-from interface_files.tk_menus_renderer import TkMenuRenderer
+
+from .tk_popups import ConfirmDialog
+from .ui_handler import get_menu_renderer
+from .tk_menus_renderer import TkMenuRenderer
 
 
 class SplashFrame(tb.Frame):

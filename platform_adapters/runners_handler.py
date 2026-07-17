@@ -2,7 +2,8 @@ import subprocess
 import os
 import psutil
 import time
-from datafiles import db
+
+from data_access.datafiles import db
 
 INVALID_NAMES = {
     "reaper", "wineserver", "steam", "steamwebhelper",
@@ -13,16 +14,13 @@ class GameRunner:
     def run(self, game_path):
         raise NotImplementedError
 
-
 class WindowsRunner(GameRunner):
     def run(self, game_path):
         return subprocess.Popen(game_path)
 
-
 class LinuxNativeRunner(GameRunner):
     def run(self, game_path):
         return subprocess.Popen([game_path])
-
 
 class LinuxWineRunner(GameRunner):
     def __init__(self, wineprefix=None):

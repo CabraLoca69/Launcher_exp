@@ -1,12 +1,13 @@
 import os
 import sys
 import platform
-import datafiles
 import subprocess
 import ctypes
 from pathlib import Path
 from PIL import Image, ImageTk
-from icon_utils import ico_to_png
+
+from data_access.datafiles import ICONS, ICONS_CACHE_DIR
+from helpers.icon_utils import ico_to_png
 
 # WINDOWS IMPORTS
 if sys.platform.startswith("win"):
@@ -23,7 +24,7 @@ if platform.system() == "Linux":
         DesktopEntry = None
 
 def _fallback_icon(size):
-    fallback = Path(datafiles.ICONS) / "no_icon.ico"
+    fallback = Path(ICONS) / "no_icon.ico"
 
     if fallback.suffix.lower() == ".ico":
         fallback = ico_to_png(fallback, size=size)
@@ -40,7 +41,7 @@ class IconProvider:
 class WindowsIconProvider(IconProvider):
     #____ ICONO DE LA VENTANA ______
     def set_window_icon(self, window, icon_name="icon.ico"):
-        icon_path = Path(datafiles.ICONS) / icon_name
+        icon_path = Path(ICONS) / icon_name
         def resource_path(rel_path):
             if hasattr(sys, "_MEIPASS"):
                 return os.path.join(sys._MEIPASS, rel_path)
@@ -56,7 +57,7 @@ class WindowsIconProvider(IconProvider):
     #_______extrae iconos de un .exe _____
     def get_icon(self, path, size=(16, 16)):
         exe_name = Path(exe_path).stem
-        ico_path = Path(datafiles.ICONS_CACHE_DIR) / f"{exe_name}.ico"
+        ico_path = Path(ICONS_CACHE_DIR) / f"{exe_name}.ico"
         ico_path.parent.mkdir(parents=True, exist_ok=True)
 
         if ico_path.exists():
@@ -108,7 +109,7 @@ class WindowsIconProvider(IconProvider):
 class LinuxIconProvider(IconProvider):
     #____ ICONO DE LA VENTANA ______
     def set_window_icon(self, window, icon_name="icon.ico"):
-        icon_path = Path(datafiles.ICONS) / icon_name
+        icon_path = Path(ICONS) / icon_name
         
         # Convertir a PNG (si no existe ya)
         png_path = icon_path.with_suffix(".png")
@@ -168,7 +169,7 @@ class LinuxIconProvider(IconProvider):
         return path.lower().endswith((".exe", ".bat", ".cmd"))
 
     def get_wine_icon(self, path: str, size):
-        icon_dir = Path(datafiles.ICONS_CACHE_DIR)
+        icon_dir = Path(ICONS_CACHE_DIR)
         icon_dir.mkdir(parents=True, exist_ok=True)
 
         stem = Path(path).stem

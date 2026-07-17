@@ -5,15 +5,6 @@ import ctypes
 from pathlib import Path
 from PIL import Image, ImageTk
 
-
-class IconUIAdapter:
-    def __init__(self, provider):
-        self.provider = provider
-
-    def get_icon(self, path, size=(16,16)):
-        img = self.provider.get_icon(path, size)
-        return load_icon(img)
-
 def load_icon(path, size=(16,16)):
     path = Path(path)
     if platform.system() == "Linux" and path.suffix.lower() == ".ico":

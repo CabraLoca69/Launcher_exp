@@ -2,11 +2,13 @@ import os
 import sys
 import shutil
 from pathlib import Path
-from icon_utils import IconUIAdapter, load_icon
+
+from helpers.icon_utils import load_icon
+from data_access.datafiles import ICONS_CACHE_DIR
+
 if sys.platform.startswith("win"):
     import win32com.client
 
-from datafiles import ICONS_CACHE_DIR
 
 class ShortcutCreator:
     def create_direct_access(self, game_name, launcher_path, game_exe_path, destino_desktop=True):

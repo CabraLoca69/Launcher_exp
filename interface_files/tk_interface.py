@@ -22,7 +22,8 @@ from data_access.datafiles import DATA_DIR, ICONS_CACHE_DIR, ICONS, CONFIG_FILE,
 from helpers.icon_utils import load_icon
 from helpers.safe_threading import safe_thread
 from helpers.helpers import (Loader, GameLauncherController, rename_platform,
-                    reload_in_thread, collect_platform_data, safe_askdirectory)
+                    reload_in_thread, collect_platform_data, safe_askdirectory,
+                    toggle_favorite)
 
 from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
 
@@ -688,10 +689,10 @@ class GamePlatformFrame(ttk.Frame):
     def toggle_favorite(self, game_name):
         _close_menu_popup(self)
     
-        try:
-            platform_service.toggle_favorite(self.platform_name, game_name, self.FAVORITE_LIMIT)
-        except FavoriteLimitError as e:
-            messagebox.showinfo("Límite alcanzado", f"Solo se permiten {e.limit} favoritos por plataforma.")
+        toggle, msg = toggle_favorite(self.platform_name, game_name, self.FAVORITE_LIMIT)
+        if not toggle:
+            messagebox.showwarning("Atención", msg)
+            return
             
     def show_favorites(self):
         self.clean_info()

@@ -373,10 +373,13 @@ def toggle_favorite(platform_name, game_name, limit=8):
     favorites = db.get(f"{platform_name}.favorites", [])
     if game_name in favorites:
         db.set(f"{platform_name}.favorites", [g for g in favorites if g != game_name])
-        return
+        return True, f"Juego '{game_name}' eliminado de favoritos."
+        
     if len(favorites) >= limit:
-        raise FavoriteLimitError(limit)
+        return False, f"Solo se permiten {limit} favoritos por plataforma."
+
     db.set(f"{platform_name}.favorites", favorites + [game_name])
+    return True,f"Juego '{game_name}' agregado a favoritos."
 
 def is_process_running(pid):
     try:

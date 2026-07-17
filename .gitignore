@@ -4,7 +4,7 @@ data/icons_cache
 data/databases/
 data/cloud_files/machine_id.txt
 __pycache__
-upload_err.txt
+upload_err.log  
 *.bat
 *.spec
 *.json

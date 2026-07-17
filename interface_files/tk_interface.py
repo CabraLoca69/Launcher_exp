@@ -569,20 +569,17 @@ class GamePlatformFrame(ttk.Frame):
             self.unbind_all("<Delete>")
             self.unbind_all("<Return>")
 
-    def create_direct_access(self, game_name, destino_desktop=True):
+    def create_direct_access(self, game_name):
         _close_menu_popup(self)
 
-        launcher_path = os.path.abspath(sys.argv[0])
-        game_exe_path = db.get(f"{self.platform_name}.game_list.{game_name}")
-
-        return self.shortcutcreator.create_direct_access(game_name, launcher_path, game_exe_path, destino_desktop)
+        game_path = db.get(f"{self.platform_name}.game_list.{game_name}")
+        return self.shortcutcreator.create_direct_access(game_name, game_path)
     
     def create_start_menu_shortcut(self, game_name):
         _close_menu_popup(self)
         
-        game_exe_path = db.get(f"{self.platform_name}.game_list.{game_name}")
-
-        self.shortcutcreator.create_start_menu_shortcut(game_name, game_exe_path, icon_path = ICONS)
+        game_path = db.get(f"{self.platform_name}.game_list.{game_name}")
+        self.shortcutcreator.create_start_menu_shortcut(game_name, game_path)
 
     def launch_game(self): # lanza el ejecutable seleccionado
         _close_menu_popup(self)

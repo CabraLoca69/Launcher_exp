@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 
 from helpers.icon_utils import load_icon
-from data_access.datafiles import ICONS_CACHE_DIR
+from data_access.datafiles import ICONS_CACHE_DIR, ICONS, db
 
 if sys.platform.startswith("win"):
     import win32com.client
@@ -20,10 +20,11 @@ class ShortcutCreator:
 #_____________________WINDOWS____________________
 class WindowsShortcutCreator(ShortcutCreator):
 
-    def create_direct_access(self, game_name, launcher_path, game_exe_path, destino_desktop=True):
+    def create_direct_access(self, game_name, destino_desktop=True):
         shell = win32com.client.Dispatch("WScript.Shell")
 
         desktop = shell.SpecialFolders("Desktop") if destino_desktop else os.getcwd()
+        game_exe_path = db.get(f"{self.platform_name}.game_list.{game_name}")
 
         shortcut_path = os.path.join(
             desktop,
@@ -31,15 +32,16 @@ class WindowsShortcutCreator(ShortcutCreator):
         )
 
         shortcut = shell.CreateShortcut(shortcut_path)
-        shortcut.TargetPath = launcher_path
+        shortcut.TargetPath = sys.executable
         shortcut.Arguments = f'"{game_exe_path}"'
         shortcut.save()
 
-    def create_start_menu_shortcut(self, game_name, game_path, icon_path=None):
+    def create_start_menu_shortcut(self, game_name, icon_path=ICONS):
 
         try:
             launcher_exe = Path(sys.executable).resolve()
             launcher_dir = launcher_exe.parent
+            game_exe_path = db.get(f"{self.platform_name}.game_list.{game_name}")
 
             start_menu = (
                 Path(os.getenv("APPDATA"))
@@ -59,7 +61,7 @@ class WindowsShortcutCreator(ShortcutCreator):
             shortcut.TargetPath = str(launcher_exe)
             shortcut.Arguments = f'--launch "{game_name}"'
             shortcut.WorkingDirectory = str(launcher_dir)
-            shortcut.IconLocation = game_path
+            shortcut.IconLocation = game_exe_path
 
             shortcut.save()
 
@@ -68,18 +70,18 @@ class WindowsShortcutCreator(ShortcutCreator):
 
 #______________ LINUX ______________
 class LinuxShortcutCreator(ShortcutCreator):
-    def create_direct_access(self, game_name, launcher_path, game_exe_path, destino_desktop=True):
+    def create_direct_access(self, game_name, game_path, destino_desktop=True):
         desktop_dir = self.get_desktop_dir() if destino_desktop else Path.cwd()
         desktop_dir.mkdir(parents=True, exist_ok=True)
 
         file_path = desktop_dir / f"{game_name}.desktop"
 
-        icon_target = self._resolve_icon(game_exe_path, game_name)
+        icon_target = self._resolve_icon(game_name, game_path)
 
         content = f"""[Desktop Entry]
 Name={game_name}
 Comment=Lanzador Cl69
-Exec="{launcher_path}" --launch "{game_name}"
+Exec="{sys.executable}" --launch "{game_name}"
 Icon={icon_target}
 Terminal=false
 Type=Application"""
@@ -87,16 +89,16 @@ Type=Application"""
         file_path.write_text(content)
         os.chmod(file_path, 0o755)
 
-    def create_start_menu_shortcut(self, game_name, game_path, icon_path=None):
+    def create_start_menu_shortcut(self, game_name, game_path, icon_path=ICONS):
 
         app_dir = Path.home() / ".local/share/applications"
         app_dir.mkdir(parents=True, exist_ok=True)
 
         file_path = app_dir / f"{game_name.lower().replace(' ', '_')}.desktop"
+        
+        command = f'"{sys.executable}" --launch "{game_name}"'
 
-        command = f'"{sys.executable}" "{Path(__file__).resolve()}" --launch "{game_name}"'
-
-        icon_target = self._resolve_icon(game_path, game_name)
+        icon_target = self._resolve_icon(game_name, game_path)
 
         content = f"""[Desktop Entry]
 Type=Application
@@ -121,8 +123,8 @@ StartupNotify=true"""
 
         return Path.home() / "Desktop"
 
-    def _resolve_icon(self, game_exe_path, game_name):            
-        cache_icon_path = ICONS_CACHE_DIR / f"{Path(game_exe_path).stem}.png"
+    def _resolve_icon(self, game_name, game_path):      
+        cache_icon_path = ICONS_CACHE_DIR / f"{Path(game_path).stem}.png"
         icons = load_icon(cache_icon_path)
 
         if not cache_icon_path.exists():

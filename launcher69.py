@@ -5,7 +5,7 @@ from interfaces import LauncherUI, update_ui
 from datafiles import db, THEMES_DIR
 from helpers import GameLauncherController
 from qt_interface import NewLauncherUI
-from interface_files.event_bus_factory import init_event_bus
+from interface_files.ui_handler import init_event_bus
 
 def main():
     if "--launch" in sys.argv:
@@ -16,19 +16,20 @@ def main():
     else:
  
 
-        #start_tk_ui()
+        start_tk_ui()
         
-        start_qt_ui()
+        #start_qt_ui()
 
 def start_tk_ui():
+    init("Tk")
+    launcherui = LauncherUI().set()
+
     if db.get("global.cloud_sync_enabled"):
         def call_update(data):
             update_ui(launcherui)
             
         call_merge(callback= call_update)
 
-    init("Tk")
-    launcherui = LauncherUI().set()
 
 def start_qt_ui():
     init("Qt")
@@ -56,6 +57,5 @@ self.parent.favorites_panel.refresh() revisar esto dentro de gamedetailspanel, i
 hacer bien lo de agregar steam_id (se ve horrible)
 para esto se va a implementar una ventana nueva con opciones sobre los juegos 
 
-El email no se actualiza en cloudsettings ni ventana principal al cambiarlo o agregarlo.
 """
 

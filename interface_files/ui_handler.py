@@ -1,0 +1,38 @@
+from .event_bus import TkEventBus, QtEventBus
+from .tk_menus_renderer import TkMenuRenderer
+from .qt_menus_renderer import QtMenuRenderer
+
+_INTERFACE_CLASSES = {
+    "Tk": TkEventBus,
+    "Qt": QtEventBus,
+}
+
+_MENU_RENDERER_CLASSES = {
+    "Tk": TkMenuRenderer,
+    "Qt": QtMenuRenderer,
+}
+
+_instance = None
+_current_interface = None  
+
+def init_event_bus(interface: str):
+    global _instance
+    if interface not in _INTERFACE_CLASSES:
+        raise ValueError(f"Interfaz desconocida: {interface}")
+    _instance = _INTERFACE_CLASSES[interface]()
+    _current_interface = interface
+    return _instance
+
+def get_event_bus():
+    if _instance is None:
+        raise RuntimeError("El event bus no fue inicializado. Llamá a init_event_bus() primero.")
+    return _instance
+
+def _require_interface():
+    if _current_interface is None:
+        raise RuntimeError("La interfaz no fue inicializada. Llamá a init_event_bus() primero.")
+    return _current_interface
+
+def get_menu_renderer():
+    interface = _require_interface()
+    return _MENU_RENDERER_CLASSES[interface]()

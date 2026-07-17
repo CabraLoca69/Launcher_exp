@@ -15,13 +15,18 @@ from PIL import Image, ImageTk
 from googleapiclient.discovery import build
 
 from machine_id import get_machine_id
-from icon_utils import IconUIAdapter, load_icon
+from icon_utils import load_icon
 from custommenus import ConfirmDialog
 from safe_threading import safe_thread
 from cloudsync import login_and_sync, call_merge
-from helpers import Loader, GameLauncherController, reload_in_thread, collect_platform_data, safe_askdirectory
+from helpers import (Loader, GameLauncherController, rename_platform,
+                    reload_in_thread, collect_platform_data, safe_askdirectory)
+
 from datafiles import DATA_DIR, ICONS_CACHE_DIR, ICONS, CONFIG_FILE, TOKEN_PATH, db, notes_db
+
 from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
+from interface_files.ui_handler import get_menu_renderer
+from interface_files.tk_menus_renderer import TkMenuRenderer
 
 
 class SplashFrame(tb.Frame):
@@ -337,8 +342,7 @@ class DraggableNotebook(tb.Notebook):
             pass
 
     def ask_platform_name(self):
-        if hasattr(self, "menu_popup") and self.menu_popup:
-            self.menu_popup.on_close()
+        _close_menu_popup(self)
         if not self.input:
             self.empty_frame.pack_forget()
             self.input = custommenus.InputDialog(self, prompt="Nombre de la Plataforma:", callback=self.input_callback_handler)
@@ -384,8 +388,7 @@ class DraggableNotebook(tb.Notebook):
         self.save_tab_order()
 
     def confirm_remove(self):
-        if hasattr(self, "menu_popup") and self.menu_popup:
-            self.menu_popup.destroy()
+        _close_menu_popup(self)
         custommenus.ConfirmDialog(self, title="Eliminar plataforma", message= "Atencion, estas por elminar una plataforma", callback=self.remove_tab).place(relx=0.5, rely=0.5, anchor="center")
              
     def remove_tab(self, confirmed):
@@ -458,7 +461,11 @@ class GamePlatformFrame(ttk.Frame):
         self.gamelaunch = GameLauncherController()
         self.gamelaunch.register_ui(self.platform_name, self)
         self.shortcutcreator = PLATFORM_METHODS[CURRENT_OS]["shortcut"]()  
-        self.menucreator = PLATFORM_METHODS[CURRENT_OS]["menu"]()
+
+        self.renderer = TkMenuRenderer()
+        self.options_provider = PLATFORM_METHODS[CURRENT_OS]["menu-options"]() 
+    
+
         self.file_walker = PLATFORM_METHODS[CURRENT_OS]["paths"]()
         self.ProviderOfIcons = PLATFORM_METHODS[CURRENT_OS]["icons"]()
         db.ensure(f"{platform_name}.favorites", [])
@@ -538,7 +545,6 @@ class GamePlatformFrame(ttk.Frame):
             game_tree.selection_set(item_id)
             game_name = game_tree.item(item_id)["values"][0]            
     
-            
             # Mostrar el menú en la posición del puntero
             self.show_menu(game_name, x , y, False)
         else:
@@ -560,21 +566,23 @@ class GamePlatformFrame(ttk.Frame):
             self.unbind_all("<Delete>")
             self.unbind_all("<Return>")
 
-    def create_direct_access(self, game_name, launcher_path, game_exe_path, destino_desktop=True):
-        if hasattr(self, "menu_popup") and self.menu_popup:
-            self.menu_popup.destroy()
-        
+    def create_direct_access(self, game_name, destino_desktop=True):
+        _close_menu_popup(self)
+
+        launcher_path = os.path.abspath(sys.argv[0])
+        game_exe_path = db.get(f"{self.platform_name}.game_list.{game_name}")
+
         return self.shortcutcreator.create_direct_access(game_name, launcher_path, game_exe_path, destino_desktop)
     
-    def create_start_menu_shortcut(self, game_name, game_path, icon_path=None):
-        if hasattr(self, "menu_popup") and self.menu_popup:
-            self.menu_popup.destroy()
+    def create_start_menu_shortcut(self, game_name):
+        _close_menu_popup(self)
         
-        self.shortcutcreator.create_start_menu_shortcut(game_name, game_path, icon_path)
+        game_exe_path = db.get(f"{self.platform_name}.game_list.{game_name}")
+
+        self.shortcutcreator.create_start_menu_shortcut(game_name, game_exe_path, icon_path = ICONS)
 
     def launch_game(self): # lanza el ejecutable seleccionado
-        if hasattr(self, "menu_popup") and self.menu_popup:
-            self.menu_popup.destroy()
+        _close_menu_popup(self)
         platform_name = self.platform_name
         game_tree = self.game_tree
         selected = game_tree.selection()
@@ -591,44 +599,34 @@ class GamePlatformFrame(ttk.Frame):
             messagebox.showwarning("Atención", "Selecciona un juego para lanzar")             
 
     def add_exe(self):
-        if hasattr(self, "menu_popup") and self.menu_popup:
-            self.menu_popup.destroy()
-        platform_name = self.platform_name
+        _close_menu_popup(self)
         exe = filedialog.askopenfilename(title="Selecciona un ejecutable")
-        if exe:
-            exe_name = os.path.splitext(os.path.basename(exe))[0]
+        if not exe:
+            return
             
-            db.set(f"{platform_name}.game_list.{exe_name}", exe)
+        success, result = self.loader.add_game(self.platform_name, exe)
+        if not success:
+            messagebox.showerror("Juego duplicado.", result)
+            return
 
-            call_populate(platform_name, self.game_tree)
+        call_populate(self.platform_name, self.game_tree)
     
     def confirm_remove(self):
-        if hasattr(self, "menu_popup") and self.menu_popup:
-            self.menu_popup.destroy()
+        _close_menu_popup(self)
         custommenus.ConfirmDialog(self, title="Eliminar juego", message= "Atencion, estas por elminar un juego", callback=self.remove_exe).place(relx=0.5, rely=0.5, anchor="center")
                
     def remove_exe(self, confirmed): # elimina el ejecutable DE LA LISTA
-        platform_name = self.platform_name
-        game_tree = self.game_tree
-        selected_items = game_tree.selection()
-        if confirmed:
-            for item_id in selected_items:
-                game_name = game_tree.item(item_id, "values")[0]  # El texto del ítem (nombre del juego)
+        if not confirmed:
+            return
 
-                game_path = db.get(f"{platform_name}.game_list.{game_name}")
-                self.loader.remove_game_icon(game_path)
-            
-                db.delete(f"{platform_name}.game_list.{game_name}")
-                db.delete(f"{platform_name}.game_times.{game_name}")
-                db.delete(f"{platform_name}.game_total_times.{game_name}")
-                favorites = db.get(f"{platform_name}.favorites", [])
-                if game_name in favorites:
-                    favorites.remove(game_name)
-                    db.set(f"{platform_name}.favorites", favorites)
+        game_tree = self.game_tree
+        for item_id in game_tree.selection():
+            game_name = game_tree.item(item_id, "values")[0]
+            self.loader.delete_game(self.platform_name, game_name)
+            game_tree.delete(item_id)
                     
-                self.clean_info()
-                self.show_favorites()
-                game_tree.delete(item_id)
+        self.clean_info()
+        self.show_favorites()
                     
     def update_on_close(self, game_name, platform):
             call_populate(platform, self.game_tree)
@@ -668,51 +666,30 @@ class GamePlatformFrame(ttk.Frame):
                 game_tree.insert("", "end", iid=game_name, text="", image=icon, values=(base_name,))
                  
     def gotofolder(self, game_name):
-        if hasattr(self, "menu_popup") and self.menu_popup:
-            self.menu_popup.destroy()
+        _close_menu_popup(self)
         platform_name = self.platform_name
         self.file_walker.goto_folder(db.get(f"{platform_name}.game_list.{game_name}"))
 
     def change_game_directory(self, game_name):
-        if hasattr(self, "menu_popup") and self.menu_popup:
-            self.menu_popup.destroy()
+        _close_menu_popup(self)
         try:
             exe = filedialog.askopenfilename(title="Selecciona un ejecutable")
-
             if not exe:
                 return  # El usuario canceló el diálogo
 
-            # Verificamos que la plataforma y el juego existan en config
-            if not db.get(self.platform_name):
-                messagebox.showerror("Error", f"La plataforma '{self.platform_name}' no existe.")
-                return
+            self.loader._set_game_path(self.platform_name, game_name, exe)
 
-            db.set(f"{self.platform_name}.game_list.{game_name}", exe)
- 
         except Exception as e:
             logging.exception("Error al cambiar el directorio del juego")
             messagebox.showerror("Error", f"No se pudo guardar el nuevo ejecutable:\n{e}")
                 
     def toggle_favorite(self, game_name):
-        if hasattr(self, "menu_popup") and self.menu_popup:
-            self.menu_popup.destroy()
+        _close_menu_popup(self)
     
-        platform_name = self.platform_name
-        favorites = db.get(f"{platform_name}.favorites", False)
-
-        if game_name in favorites:
-            new_favs = [g for g in favorites if g != game_name]
-            db.set(f"{platform_name}.favorites", new_favs)
-        else:
-            if len(favorites) >= self.FAVORITE_LIMIT:
-                messagebox.showinfo(
-                    "Límite alcanzado", 
-                    f"Solo se permiten {self.FAVORITE_LIMIT} favoritos por plataforma."
-                )
-                return
-            # Crear nueva lista con el juego agregado
-            new_favs = favorites + [game_name]
-            db.set(f"{platform_name}.favorites", new_favs)
+        try:
+            platform_service.toggle_favorite(self.platform_name, game_name, self.FAVORITE_LIMIT)
+        except FavoriteLimitError as e:
+            messagebox.showinfo("Límite alcanzado", f"Solo se permiten {e.limit} favoritos por plataforma.")
             
     def show_favorites(self):
         self.clean_info()
@@ -749,8 +726,7 @@ class GamePlatformFrame(ttk.Frame):
 
         def ask_input():
             input = custommenus.InputDialog(self, prompt="Ingrese Steam ID:", callback=input_callback_handler)
-            if hasattr(self, "menu_popup") and self.menu_popup:
-                self.menu_popup.destroy()
+            _close_menu_popup(self)
         
             input.place(relx=0.5, rely=0, anchor="n")
 
@@ -760,8 +736,10 @@ class GamePlatformFrame(ttk.Frame):
         platform_name = self.platform_name
         menu = custommenus.CustomPopupMenu(self)
         self.menu_popup = menu
-        
-        self.menucreator.create_menu(menu, platform_name, game_name, btn_props, self)
+
+        options = self.options_provider.get_options(game_name, btn_props, self)
+
+        self.renderer.build(menu, options)
 
         menu.show(x_root, y_root)
   
@@ -911,7 +889,7 @@ class GameDetailsPanel(tb.Frame):
                     # Pequeña fila con ícono + nombre
                     frame = tb.Frame(self)
                     frame.pack(fill="x", padx=20, pady=5)
-                    icon = IconUIAdapter(self.ProviderOfIcons).get_icon(path)
+                    icon = load_icon(self.ProviderOfIcons.get_icon(path))
 
                     if icon:
                         icon_label = tk.Label(frame, image=icon)
@@ -1181,36 +1159,23 @@ class PropertiesWindow(custommenus.AutoCloseFrame):
             self.warning_label_path.config(text="                                                              Nada que eliminar")
             self.warning_label_path.after(3000, lambda: self.warning_label_path.config(text=""))   
 
-    def remove_folder(self, confirmed):  # elimina el directorio DE LA LISTA
-        if confirmed:
-            path_listbox = self.path_listbox
-            selected = path_listbox.curselection()
-            path = path_listbox.get(selected[0])
+    def remove_folder(self, confirmed):
+        if not confirmed:
+            return
 
-            # Eliminar juegos que estén dentro de esa carpeta
-            for game_name, game_path in db.get_children(f"{self.platform_name}.game_list").items():
-                if path in game_path:
-                    db.delete(f"{self.platform_name}.game_list.{game_name}")
-                    db.delete(f"{self.platform_name}.game_times.{game_name}")
-                    db.delete(f"{self.platform_name}.game_total_times.{game_name}.{get_machine_id()}")
-                    favs = db.get(f"{self.platform_name}.favorites")
-                    if game_name in favs:
-                        favs.remove(game_name)
-                        db.set(f"{self.platform_name}.favorites", favs)
-                        
-            # Eliminar carpeta de la lista de platform_folders
-            folders = db.get(f"{self.platform_name}.platform_folders", [])
-            new_folders = [f for f in folders if f != path]
-            db.set(f"{self.platform_name}.platform_folders", new_folders)
+        path_listbox = self.path_listbox
+        selected = path_listbox.curselection()
+        path = path_listbox.get(selected[0])
 
-            # Actualizar UI
-            path_listbox.delete(selected[0])
-            self.update_game_list()
+        self.loader.delete_folder(self.platform_name, path)
 
-    def close_menu(self):
-        for widget in self.winfo_children():
-            if isinstance(widget, custommenus.CustomPopupMenu) or isinstance(widget, custommenus.ConfirmDialog):
-                widget.destroy()
+        path_listbox.delete(selected[0])
+        self.update_game_list()
+
+        def close_menu(self):
+            for widget in self.winfo_children():
+                if isinstance(widget, custommenus.CustomPopupMenu) or isinstance(widget, custommenus.ConfirmDialog):
+                    widget.destroy()
     
     def update_directory_list(self): # recible el path_list y lo "actualiza"
         path_listbox = self.path_listbox
@@ -1224,35 +1189,28 @@ class PropertiesWindow(custommenus.AutoCloseFrame):
             self.on_update_callback()
 
     def update_tab_name(self):
-        if self.on_update_tab:
-            new_name = self.tab_name_var.get().strip().capitalize()
-            if not new_name:
-                return
+        if not self.on_update_tab:
+            return
 
-            # Renombrar la clave de la plataforma
-            platform_data = db.get(self.platform_name, {})
-            db.delete(self.platform_name)
-            db.set(new_name, platform_data)
+        new_name = self.tab_name_var.get().strip().capitalize()
+        if not new_name:
+            self.warning_label.config(text="No podés dejar el nombre vacío.")
+            self.warning_label.after(3000, lambda: self.warning_label.config(text=""))
+            self.lift()
+            return
 
-            # Actualizar el orden de pestañas
-            tab_order = db.get("global.tab_order", [])
-            if self.platform_name in tab_order:
-                index = tab_order.index(self.platform_name)
-                tab_order[index] = new_name
-                db.set("global.tab_order", tab_order)
-                
-                pre_name = self.platform_name
-                self.platform_name = new_name
-                self.warning_label.config(text="")  # Oculta la advertencia si está todo bien
-                
-                self.on_update_tab(new_name, pre_name)
-                return
-            
-            else: 
-                self.warning_label.config(text="                                              No podés dejar el nombre vacío.")
-                self.warning_label.after(3000, lambda: self.warning_label.config(text=""))
-                self.lift()
-                return
+        pre_name = self.platform_name
+        renamed = rename_platform(pre_name, new_name)
+
+        if not renamed:
+            self.warning_label.config(text="No se encontró la plataforma en el orden de pestañas.")
+            self.warning_label.after(3000, lambda: self.warning_label.config(text=""))
+            self.lift()
+            return
+
+        self.platform_name = new_name
+        self.warning_label.config(text="")
+        self.on_update_tab(new_name, pre_name)
 
 class CloudSettingsWindow(custommenus.AutoCloseFrame):
     def __init__(self, parent, folder_id=None, on_close_callback=None, **kwargs):
@@ -1327,7 +1285,10 @@ class CloudSettingsWindow(custommenus.AutoCloseFrame):
                 self.parent.after(0, lambda: self.master.master.update_title_label())
 
         safe_thread(worker)
-            
+
+def _close_menu_popup(frame): #helper, cierra los popups
+    if hasattr(frame, "menu_popup") and frame.menu_popup:
+        frame.menu_popup.destroy()
 
 def update_ui(target):
     notebook = target.app.notebook
@@ -1382,7 +1343,6 @@ def update_ui(target):
 def call_populate(platform_name, target):
     def worker():
         all_data = [collect_platform_data(platform_name)]
-        # Una vez listo, volvés al hilo principal
         target.after(0, lambda: populate_ui(all_data, target))
 
     safe_thread(worker)

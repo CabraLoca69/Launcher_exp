@@ -18,10 +18,19 @@ from datafiles import DATA_DIR
 from safe_threading import safe_thread
 from cloudsync import login_and_sync, call_merge
 from helpers import Loader, collect_platform_data, GameLauncherController
-from qicon_utils import QIconUIAdapter, load_qicon
+from qicon_utils import load_qicon
 from datafiles import THEMES_DIR, TOKEN_PATH, db
 from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
 from qpopups import InputDialog, ConfirmDialog, CustomPopupMenu
+
+
+class Platform_handler():
+    def __init__(self):
+        pass
+
+    def menucreator(self):
+        return PLATFORM_METHODS[CURRENT_OS]["menu"]()
+
 
 # Panel de favoritos
 class FavoritesPanel(QWidget):
@@ -392,21 +401,22 @@ class PlatformTab(QWidget):
         GameLauncherController().launch_game(item.text(0))
 
     def _on_game_right_click(self, pos):
-        item = self.games_tree.itemAt(pos)
-        if item is None:
+        game = self.games_tree.itemAt(pos)
+        if game is None:
             return  # click derecho en espacio vacío, no mostrar nada
 
         # opcional: seleccionar el item antes de mostrar el menú,
         # para que quede claro sobre cuál vas a actuar
-        self.games_tree.setCurrentItem(item)
+        self.games_tree.setCurrentItem(game)
 
-        game_name = item.text(0)
+        game_name = game.text(0)
         global_pos = self.games_tree.viewport().mapToGlobal(pos)
 
         menu = CustomPopupMenu(self, on_close_callback=None)
         menu.add_button("Jugar",          command=lambda: self._on_game_double_clicked(item, 0))
         menu.add_button("Abrir carpeta",  command=lambda: self._open_game_folder(game_name))
         menu.add_button("Eliminar",       command=self._delete_selected_item)
+        
         menu.show_at(global_pos, offset_x=2, offset_y=84)
    
     # ------------------------------------------------------------------

@@ -89,6 +89,26 @@ class SQLiteDatabase:
             cur.execute("DELETE FROM config WHERE key LIKE ?", (like_pattern,))
             self.conn.commit()
 
+    def rename_prefix(self, old_prefix: str, new_prefix: str):
+        """Renombra todas las keys que empiecen con 'old_prefix.' a 'new_prefix.'"""
+        with self.lock:
+            cur = self.conn.cursor()
+            like_pattern = old_prefix + ".%"
+            cur.execute("SELECT key, value FROM config WHERE key LIKE ?", (like_pattern,))
+            rows = cur.fetchall()
+
+            old_len = len(old_prefix)
+            for key, value_json in rows:
+                new_key = new_prefix + key[old_len:]
+                cur.execute(
+                    "INSERT INTO config(key, value) VALUES (?, ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                    (new_key, value_json)
+                )
+                cur.execute("DELETE FROM config WHERE key=?", (key,))
+
+            self.conn.commit()
+
     def update(self, keypath, func):
         key = self._resolve_path(keypath)
         old = self.get(key)

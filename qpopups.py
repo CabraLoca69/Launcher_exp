@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QDialog, QFrame, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QWidget, QApplication,
 )
+
 from PySide6.QtCore import Qt, QPoint, QEvent, QTimer
 from PySide6.QtGui import QKeyEvent
 

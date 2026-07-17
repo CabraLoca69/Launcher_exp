@@ -16,7 +16,7 @@ from safe_threading import safe_thread
 from icon_utils import load_icon, IconUIAdapter
 from datafiles import ICONS, ICONS_CACHE_DIR, db
 from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
-from interface_files.event_bus_factory import get_event_bus
+from interface_files.ui_handler import get_event_bus
 
 class Loader:
     def __init__(self):
@@ -38,6 +38,50 @@ class Loader:
 
         self.scan_for_games(platform_name)
         return folder
+
+    def add_game(self, platform_name: str, exe_path: str) -> tuple[bool, str]:
+        exe_name = os.path.splitext(os.path.basename(exe_path))[0]
+        key = f"{platform_name}.game_list.{exe_name}"
+
+        if db.get(key) is not None:
+            return False, f"Ya existe un juego llamado '{exe_name}' en esta plataforma."
+
+        self._set_game_path(platform_name, exe_name, exe_path)
+        return True, exe_name
+
+    def _set_game_path(self, platform_name: str, exe_name: str, exe_path: str) -> None:
+        db.set(f"{platform_name}.game_list.{exe_name}", exe_path)
+
+    def delete_game(self, platform_name: str, game_name: str):
+        with db.lock:
+            game_path = db.get(f"{platform_name}.game_list.{game_name}")
+            if game_path:
+                self.remove_game_icon(game_path)
+
+            db.delete(f"{platform_name}.game_list.{game_name}")
+            db.delete(f"{platform_name}.game_times.{game_name}")
+            db.delete(f"{platform_name}.game_total_times.{game_name}")
+
+            favorites = db.get(f"{platform_name}.favorites", default=[])
+            if game_name in favorites:
+                favorites.remove(game_name)
+                db.set(f"{platform_name}.favorites", favorites)
+
+    def delete_folder(self, platform_name: str, folder_path: str):
+        removed_games = []
+
+        with db.lock:
+            game_list = db.get_children(f"{platform_name}.game_list")
+            for game_name, game_path in game_list.items():
+                if folder_path in game_path:
+                    self.delete_game(platform_name, game_name)
+                    removed_games.append(game_name)
+
+            folders = db.get(f"{platform_name}.platform_folders", default=[])
+            new_folders = [f for f in folders if f != folder_path]
+            db.set(f"{platform_name}.platform_folders", new_folders)
+
+        return removed_games
 
     def scan_for_games(self, platform_name):
         ignore_keywords = [
@@ -269,6 +313,20 @@ class GameLauncherController:
     def register_ui(self, platform, ui_instance):
         self.event_bus.register_ui(platform, ui_instance)
 
+def rename_platform(old_name: str, new_name: str) -> bool:
+    with db.lock:
+        tab_order = db.get("global.tab_order", default=[])
+        if old_name not in tab_order:
+            return False
+
+        db.rename_prefix(old_name, new_name)  
+
+        index = tab_order.index(old_name)
+        tab_order[index] = new_name
+        db.set("global.tab_order", tab_order)
+
+    return True
+
 def safe_askdirectory():
     try:
         folder = filedialog.askdirectory()
@@ -308,6 +366,15 @@ def clean_orphaned_sessions():
 
     for game_name, info in alive_running.items():
         db.set(f"global.actual_running.{game_name}", info)
+
+def toggle_favorite(platform_name, game_name, limit=8):
+    favorites = db.get(f"{platform_name}.favorites", [])
+    if game_name in favorites:
+        db.set(f"{platform_name}.favorites", [g for g in favorites if g != game_name])
+        return
+    if len(favorites) >= limit:
+        raise FavoriteLimitError(limit)
+    db.set(f"{platform_name}.favorites", favorites + [game_name])
 
 def is_process_running(pid):
     try:

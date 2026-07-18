@@ -18,7 +18,9 @@ from data_access.datafiles import DATA_DIR, THEMES_DIR, TOKEN_PATH, db
 from data_access.cloudsync import login_and_sync, call_merge
 
 from helpers.safe_threading import safe_thread
-from helpers.helpers import FileManager, DataManager, GameLauncherController
+from helpers.file_manager import FileManager
+from helpers.data_manager import DataManager
+from helpers.games_launcher import GameLauncherController
 from helpers.qicon_utils import load_qicon
 
 from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS

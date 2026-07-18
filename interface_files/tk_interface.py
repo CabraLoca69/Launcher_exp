@@ -21,8 +21,11 @@ from data_access.datafiles import DATA_DIR, ICONS_CACHE_DIR, ICONS, CONFIG_FILE,
 
 from helpers.icon_utils import load_icon
 from helpers.safe_threading import safe_thread
-from helpers.helpers import (FileManager, GameLauncherController, DataManager, 
-                            safe_askdirectory)
+
+from helpers.helpers import safe_askdirectory
+from helpers.file_manager import FileManager
+from helpers.games_launcher import GameLauncherController
+from helpers.data_manager import DataManager
 
 from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
 

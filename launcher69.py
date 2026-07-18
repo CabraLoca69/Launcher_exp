@@ -1,5 +1,5 @@
 import sys
-from helpers.helpers import GameLauncherController
+from helpers.games_launcher import GameLauncherController
 
 def main():
     launcher_controler = GameLauncherController()
@@ -33,15 +33,15 @@ if __name__ == "__main__":
 
 #### A implementar
 """
-Nueva interfaz Qt6
-
 funcion para quitar acc directos y menu de inicio?
+guardar iconos de acc directo en .local/share/applications/icons/
 
-guardar iconos de acc directo en .local/share/applications/icons
 """
 ######## Reparar
 """ 
+
 self.parent.favorites_panel.refresh() revisar esto dentro de gamedetailspanel, intentar con signal
+
 hacer bien lo de agregar steam_id (se ve horrible)
 para esto se va a implementar una ventana nueva con opciones sobre los juegos 
 

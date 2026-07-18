@@ -16,14 +16,13 @@ from googleapiclient.discovery import build
 from . import tk_popups as custommenus
 
 from data_access.machine_id import get_machine_id
-from data_access.cloudsync import login_and_sync, call_merge
+from data_access.cloudsync import login_and_sync, call_merge    
 from data_access.datafiles import DATA_DIR, ICONS_CACHE_DIR, ICONS, CONFIG_FILE, TOKEN_PATH, db, notes_db
 
 from helpers.icon_utils import load_icon
 from helpers.safe_threading import safe_thread
-from helpers.helpers import (Loader, GameLauncherController, rename_platform,
-                    reload_in_thread, collect_platform_data, safe_askdirectory,
-                    toggle_favorite)
+from helpers.helpers import (FileManager, GameLauncherController, DataLoader, 
+                            safe_askdirectory, toggle_favorite)
 
 from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
 
@@ -46,7 +45,7 @@ class SplashFrame(tb.Frame):
     def close(self):
         self.destroy()
 
-class LauncherUI:
+class TkLauncherUI:
     def __init__(self):        
         self.root = tb.Window(themename="darkly")
         self.root.title("CLauncher69")
@@ -71,13 +70,16 @@ class LauncherUI:
         # Manager de sesiones
         self.session_manager = SessionManager(self.root, self)
         if CONFIG_FILE:
-            reload_in_thread(self, self.start)
+            DataLoader().reload_in_thread(self, self.start)
         
         tabs = db.get("global.tab_order")
         if not tabs or not isinstance(tabs, list):
             self.app.notebook.emptyframe()
                 
     def set(self):
+        if db.get("global.cloud_sync_enabled"):            
+            call_merge(callback= lambda _: update_ui(self))
+
         self.root.after(300, self.init_ui)        
         self.root.mainloop()        
     
@@ -276,7 +278,7 @@ class DraggableNotebook(tb.Notebook):
         self.FAVORITE_LIMIT = 5
         self.platform_frames = {}
         self.platform_trees = {}
-        self.loader = Loader()
+        self.file_manager = FileManager()
                         
         # este frame se usa cuando no hay tabs (plataformas)
         self.empty_frame = tb.Frame(self)
@@ -370,7 +372,7 @@ class DraggableNotebook(tb.Notebook):
         
         folder = safe_askdirectory()
         if folder:
-            self.loader.add_folder(platform_name, folder)
+            self.file_manager.add_folder(platform_name, folder)
         else:
             return
 
@@ -386,7 +388,7 @@ class DraggableNotebook(tb.Notebook):
     
     def call_populate(self, platform_name):
         all_data = []
-        all_data.append(collect_platform_data(platform_name))
+        all_data.append(DataLoader().collect_platform_data(platform_name))
         populate_ui(all_data,self)
         self.save_tab_order()
 
@@ -402,7 +404,7 @@ class DraggableNotebook(tb.Notebook):
                 # Borrar íconos
                 game_list = db.get(f"{platform_name}.game_list", {})
                 for game_name, game_path in game_list.items():
-                    self.loader.remove_game_icon(game_path)
+                    self.file_manager.remove_game_icon(game_path)
 
                 # BORRAR TODA LA PLATAFORMA
                 db.delete_prefix(platform_name)
@@ -458,7 +460,7 @@ class GamePlatformFrame(ttk.Frame):
         self.FAVORITE_LIMIT = 5
         self.platform_name = platform_name
         self.menu = False
-        self.loader = Loader()
+        self.file_manager = FileManager()
         self.img = Image.open(os.path.join(ICONS, f"no_icon.ico")).resize((16, 16), Image.LANCZOS)
         self.default_icon= ImageTk.PhotoImage(self.img)
         self.gamelaunch = GameLauncherController()
@@ -604,7 +606,7 @@ class GamePlatformFrame(ttk.Frame):
         if not exe:
             return
             
-        success, result = self.loader.add_game(self.platform_name, exe)
+        success, result = self.file_manager.add_game(self.platform_name, exe)
         if not success:
             messagebox.showerror("Juego duplicado.", result)
             return
@@ -622,7 +624,7 @@ class GamePlatformFrame(ttk.Frame):
         game_tree = self.game_tree
         for item_id in game_tree.selection():
             game_name = game_tree.item(item_id, "values")[0]
-            self.loader.delete_game(self.platform_name, game_name)
+            self.file_manager.delete_game(self.platform_name, game_name)
             game_tree.delete(item_id)
                     
         self.clean_info()
@@ -677,7 +679,7 @@ class GamePlatformFrame(ttk.Frame):
             if not exe:
                 return  # El usuario canceló el diálogo
 
-            self.loader._set_game_path(self.platform_name, game_name, exe)
+            self.file_manager._set_game_path(self.platform_name, game_name, exe)
 
         except Exception as e:
             logging.exception("Error al cambiar el directorio del juego")
@@ -978,7 +980,7 @@ class PropertiesWindow(custommenus.AutoCloseFrame):
         self.game_tree = game_tree
         self.on_update_callback = on_update_callback
         self.on_update_tab = on_update_tab
-        self.loader = Loader()
+        self.file_manager = FileManager()
         self.file_walker = PLATFORM_METHODS[CURRENT_OS]["paths"]()
         
         self.build_ui()
@@ -1129,7 +1131,7 @@ class PropertiesWindow(custommenus.AutoCloseFrame):
         self.close_menu()
         folder = safe_askdirectory()
         if folder:
-            self.loader.add_folder(self.platform_name, folder)
+            self.file_manager.add_folder(self.platform_name, folder)
             self.update_directory_list()
             self.update_game_list()
         else: 
@@ -1167,7 +1169,7 @@ class PropertiesWindow(custommenus.AutoCloseFrame):
         selected = path_listbox.curselection()
         path = path_listbox.get(selected[0])
 
-        self.loader.delete_folder(self.platform_name, path)
+        self.file_manager.delete_folder(self.platform_name, path)
 
         path_listbox.delete(selected[0])
         self.update_game_list()
@@ -1200,7 +1202,7 @@ class PropertiesWindow(custommenus.AutoCloseFrame):
             return
 
         pre_name = self.platform_name
-        renamed = rename_platform(pre_name, new_name)
+        renamed = FileManager().rename_platform(pre_name, new_name)
 
         if not renamed:
             self.warning_label.config(text="No se encontró la plataforma en el orden de pestañas.")
@@ -1338,11 +1340,11 @@ def update_ui(target):
         if sel_id is not None:
             notebook.after(0, restore_selection)
 
-    reload_in_thread(target, call)
+    DataLoader().reload_in_thread(target, call)
 
 def call_populate(platform_name, target):
     def worker():
-        all_data = [collect_platform_data(platform_name)]
+        all_data = [DataLoader().collect_platform_data(platform_name)]
         target.after(0, lambda: populate_ui(all_data, target))
 
     safe_thread(worker)

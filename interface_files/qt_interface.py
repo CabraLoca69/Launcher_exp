@@ -18,7 +18,7 @@ from data_access.datafiles import DATA_DIR, THEMES_DIR, TOKEN_PATH, db
 from data_access.cloudsync import login_and_sync, call_merge
 
 from helpers.safe_threading import safe_thread
-from helpers.helpers import Loader, collect_platform_data, GameLauncherController
+from helpers.helpers import FileManager, DataLoader, GameLauncherController
 from helpers.qicon_utils import load_qicon
 
 from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
@@ -345,7 +345,7 @@ class PlatformTab(QWidget):
     def __init__(self, platform_name: str, parent=None):
         super().__init__(parent)
         self.platform_name = platform_name
-        self.loader = Loader()
+        self.file_manager = FileManager()
  
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -454,7 +454,7 @@ class PlatformTab(QWidget):
 
         if removed:
             game_path = db.get(f"{platform_name}.game_list.{game_name}")
-            self.loader.remove_game_icon(game_path)
+            self.file_manager.remove_game_icon(game_path)
             
             db.delete(f"{platform_name}.game_list.{game_name}")
             db.delete(f"{platform_name}.game_times.{game_name}")
@@ -565,7 +565,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("CLauncher69 - V2")
         self.setMinimumSize(1200, 700)
-        self.loader = Loader()
+        self.file_manager = FileManager()
  
         root = QWidget()
         root_layout = QVBoxLayout(root)
@@ -642,14 +642,14 @@ class MainWindow(QMainWindow):
             return
  
         platform_name, folder = result
-        self.loader.add_folder(platform_name, folder)
+        self.file_manager.add_folder(platform_name, folder)
  
         tab_order = db.get("global.tab_order", default=[]) or []
         if platform_name not in tab_order:
             tab_order.append(platform_name)
             db.set("global.tab_order", tab_order)
  
-        data = collect_platform_data(platform_name)
+        data = DataLoader().collect_platform_data(platform_name)
         self._add_platform_tab(data)
         self.tab_widget.setCurrentIndex(self.tab_widget.count() - 1)
  
@@ -674,7 +674,7 @@ class MainWindow(QMainWindow):
  
         game_list = db.get(f"{platform_name}.game_list", default={}) or {}
         for game_path in game_list.values():
-            self.loader.remove_game_icon(game_path)
+            self.file_manager.remove_game_icon(game_path)
  
         db.delete_prefix(platform_name)
         self.tab_widget.removeTab(index)
@@ -731,7 +731,7 @@ class ReloadWorker(QObject):
 
         for platform_name in tab_order:
             self.progress.emit(f"Cargando {platform_name}...")
-            data = collect_platform_data(platform_name)
+            data = DataLoader().collect_platform_data(platform_name)
             all_data.append(data)
 
         self.finished.emit(all_data)
@@ -749,9 +749,8 @@ def reload_with_thread(ui, on_callback):
 
     ui.worker_thread.start()
 
-
 # Entry point
-class NewLauncherUI:
+class QtLauncherUI:
     def launch_ui():
         app = QApplication(sys.argv)
         themes_path = Path(THEMES_DIR) / "theme_cyberpunk.qss"

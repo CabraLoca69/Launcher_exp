@@ -20,7 +20,7 @@ from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
 
 from interface_files.ui_handler import get_event_bus
 
-class Loader:
+class FileManager():
     def __init__(self):
         self.grouped = True
         #este revisa que tipo de ejecutable tenemos
@@ -84,6 +84,20 @@ class Loader:
             db.set(f"{platform_name}.platform_folders", new_folders)
 
         return removed_games
+    
+    def rename_platform(old_name: str, new_name: str) -> bool:
+        with db.lock:
+            tab_order = db.get("global.tab_order", default=[])
+            if old_name not in tab_order:
+                return False
+
+            db.rename_prefix(old_name, new_name)  
+
+            index = tab_order.index(old_name)
+            tab_order[index] = new_name
+            db.set("global.tab_order", tab_order)
+
+        return True
 
     def scan_for_games(self, platform_name):
         ignore_keywords = [
@@ -159,7 +173,7 @@ class GameLauncherController:
 
         GameLauncherController._initalized = True
         
-# Lógica principal
+    # Lógica principal
     def launch_game(self, game_name):
         def resolve_game(game_name):
             search = f"%.game_list.{game_name}"
@@ -238,7 +252,7 @@ class GameLauncherController:
         if db.get(f"global.actual_running.{game_name}") is None:
             safe_thread(execute, daemon= False)
 
-# Helpers de guardado de tiempos
+    # Helpers de guardado de tiempos
     def _save_playtime(self, platform_name, game_name, start_time, last_update_time, now):
         pcid = get_machine_id()
         current_time = time.time()
@@ -315,20 +329,6 @@ class GameLauncherController:
     def register_ui(self, platform, ui_instance):
         self.event_bus.register_ui(platform, ui_instance)
 
-def rename_platform(old_name: str, new_name: str) -> bool:
-    with db.lock:
-        tab_order = db.get("global.tab_order", default=[])
-        if old_name not in tab_order:
-            return False
-
-        db.rename_prefix(old_name, new_name)  
-
-        index = tab_order.index(old_name)
-        tab_order[index] = new_name
-        db.set("global.tab_order", tab_order)
-
-    return True
-
 def safe_askdirectory():
     try:
         folder = filedialog.askdirectory()
@@ -387,56 +387,45 @@ def is_process_running(pid):
     except Exception:
         return False
 
-def reload_in_thread(ui, on_callback):
-    def worker():
-        all_data = []
+class DataLoader():
+    def __init__(self):
+        self.grouped = True
+        self.executable_detector = PLATFORM_METHODS[CURRENT_OS]["exedetect"]()
 
-        tab_order = db.get("global.tab_order", [])        
+    def reload_in_thread(self, ui, on_callback):
+        def worker():
+            all_data = []
 
-        for platform_name in tab_order:
-            all_data.append(collect_platform_data(platform_name))
+            tab_order = db.get("global.tab_order", [])        
 
-        ui.root.after(0, lambda: on_callback(all_data))
+            for platform_name in tab_order:
+                all_data.append(self.collect_platform_data(platform_name))
 
-    safe_thread(worker)
+            ui.root.after(0, lambda: on_callback(all_data))
 
-def collect_platform_data(platform_name):
-    grouped = True
-    default_icon = os.path.join(ICONS, "no_icon.ico")
+        safe_thread(worker)
+
+    def collect_platform_data(self, platform_name):
+        grouped = True
+        default_icon = os.path.join(ICONS, "no_icon.ico")
     
-    result = {
-        "platform": platform_name,
-        "games": [],
-        "grouped": [],
-        "favorites": [],
-        "recent": [],
-        "by_month": {}
-    }
+        result = {
+            "platform": platform_name,
+            "games": [],
+            "grouped": [],
+            "favorites": [],
+            "recent": [],
+            "by_month": {}
+        }
 
-    loader = Loader()
+        game_list   = db.get_children(f"{platform_name}.game_list")
+        game_times  = db.get_children(f"{platform_name}.game_times")
+        favorites   = db.get_children(f"{platform_name}.favorites")
 
-    game_list   = db.get_children(f"{platform_name}.game_list")
-    game_times  = db.get_children(f"{platform_name}.game_times")
-    favorites   = db.get_children(f"{platform_name}.favorites")
+        if grouped:
+            icons = PLATFORM_METHODS[CURRENT_OS]["icons"]()
+            for name, path in sorted(game_list.items(), key=lambda item: FileManager().sort_key(item[0], game_times)):
+                game_info = {"name": name, "path": path, "icon": icons.get_icon(path) or default_icon}
+                result["grouped"].append(game_info)
 
-    if grouped:
-        icons = PLATFORM_METHODS[CURRENT_OS]["icons"]()
-        for name, path in sorted(game_list.items(), key=lambda item: loader.sort_key(item[0], game_times)):
-            game_info = {"name": name, "path": path, "icon": icons.get_icon(path) or default_icon}
-            result["grouped"].append(game_info)
-
-    return result
-                
-    """for name, path in game_list.items():
-        game_info = {"name": name, "path": path, "icon": extract_icon(path) or default_icon}
-        if name in favorites:
-            result["favorites"].append(game_info)
-        elif (times := game_times.get(name)):
-            try:
-                last_played = datetime.strptime(times[-1]["Start"], "%Y-%m-%d %H:%M:%S")
-                key = last_played.strftime("%Y-%m")
-                result["by_month"].setdefault(key, []).append(game_info)
-            except ValueError:
-                result["recent"].append(game_info)
-        else:
-            result["recent"].append(game_info)"""
+        return result

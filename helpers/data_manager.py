@@ -3,11 +3,11 @@ from data_access.datafiles import ICONS, db
 from helpers.safe_threading import safe_thread
 from helpers.file_manager import FileManager
 from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
+from platform_adapters.platform_handler import PlatformHandler
 
 class DataManager():
     def __init__(self):
         self.grouped = True
-        self.executable_detector = PLATFORM_METHODS[CURRENT_OS]["exedetect"]()
 
     def reload_in_thread(self, ui, on_callback):
         def worker():
@@ -40,7 +40,7 @@ class DataManager():
         favorites   = db.get_children(f"{platform_name}.favorites")
 
         if grouped:
-            icons = PLATFORM_METHODS[CURRENT_OS]["icons"]()
+            icons = PlatformHandler().get("icons")
             for name, path in sorted(game_list.items(), key=lambda item: FileManager().sort_key(item[0], game_times)):
                 game_info = {"name": name, "path": path, "icon": icons.get_icon(path) or default_icon}
                 result["grouped"].append(game_info)

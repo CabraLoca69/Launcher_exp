@@ -15,15 +15,13 @@ from data_access.datafiles import ICONS, ICONS_CACHE_DIR, db
 
 from helpers.safe_threading import safe_thread
 
-from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
+from platform_adapters.platform_handler import PlatformHandler
 
 from interface_files.ui_handler import get_event_bus
 
 class FileManager():
     def __init__(self):
         self.grouped = True
-        #este revisa que tipo de ejecutable tenemos
-        self.executable_detector = PLATFORM_METHODS[CURRENT_OS]["exedetect"]()
         pass
     
     def add_folder(self, platform_name, folder):  # agrega un directorio a la lista   
@@ -116,7 +114,7 @@ class FileManager():
                 for file in files:
                     full_path = os.path.join(root, file)
 
-                    if not self.executable_detector.is_executable(full_path):
+                    if not PlatformHandler().get("exedetect").is_executable(full_path):
                         continue
 
                     if any(k in file.lower() for k in ignore_keywords):

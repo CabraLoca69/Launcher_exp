@@ -14,7 +14,7 @@ from helpers.safe_threading import safe_thread
 
 from data_access.cloudsync import call_upload
 
-from platform_adapters.registry import PLATFORM_METHODS, CURRENT_OS
+from platform_adapters.platform_handler import PlatformHandler
 
 class GameLauncherController:
     _instance = None
@@ -34,7 +34,6 @@ class GameLauncherController:
         self.already_saved = {}
         self.lock = threading.Lock()
         self.event_bus = get_event_bus()
-        self.runner = PLATFORM_METHODS[CURRENT_OS]["runner"]()
 
         GameLauncherController._initalized = True
         
@@ -73,7 +72,7 @@ class GameLauncherController:
             start_dt = datetime.now()
 
             # Uso el runner para lanzar el juego (retorna el proceso)
-            process = self.runner.run(game_path)
+            process = PlatformHandler().get("runner").run(game_path)
             pid = process.pid
 
             # Guardar datos iniciales

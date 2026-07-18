@@ -23,17 +23,9 @@ from helpers.data_manager import DataManager
 from helpers.games_launcher import GameLauncherController
 from helpers.qicon_utils import load_qicon
 
-from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
+from platform_adapters.platform_handler import PlatformHandler
 
 from .qt_popups import InputDialog, ConfirmDialog, CustomPopupMenu
-
-
-class Platform_handler():
-    def __init__(self):
-        pass
-
-    def menucreator(self):
-        return PLATFORM_METHODS[CURRENT_OS]["menu"]()
 
 
 # Panel de favoritos
@@ -47,7 +39,6 @@ class FavoritesPanel(QWidget):
     def __init__(self, platform_name: str, parent=None):
         super().__init__(parent)
         self.platform_name = platform_name
-        self.ProviderOfIcons = PLATFORM_METHODS[CURRENT_OS]["icons"]()
         self.setObjectName("favoritesPanel")
  
         root = QVBoxLayout(self)
@@ -113,7 +104,7 @@ class FavoritesPanel(QWidget):
         icon_label = QLabel()
         icon_label.setFixedSize(24, 24)
         icon_label.setScaledContents(True)
-        qicon_Path = self.ProviderOfIcons.get_icon(path) #lo cachea, si ya existe devuelve el path al cacheado
+        qicon_Path = PlatformHandler().get("icons").get_icon(path) #lo cachea, si ya existe devuelve el path al cacheado
         qicon = load_qicon(qicon_Path)
         if qicon and not qicon.isNull():
             icon_label.setPixmap(qicon.pixmap(24, 24))

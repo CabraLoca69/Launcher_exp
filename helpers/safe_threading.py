@@ -13,4 +13,3 @@ def safe_thread(target, *args, daemon = True, **kwargs):
     t = threading.Thread(target=wrapper, daemon = daemon)
     t.start()
     return t
-

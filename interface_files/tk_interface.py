@@ -27,7 +27,7 @@ from helpers.file_manager import FileManager
 from helpers.games_launcher import GameLauncherController
 from helpers.data_manager import DataManager
 
-from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
+from platform_adapters.platform_handler import PlatformHandler
 
 from .tk_popups import ConfirmDialog
 from .ui_handler import get_menu_renderer
@@ -54,7 +54,7 @@ class TkLauncherUI:
         self.root.title("CLauncher69")
         self.root.geometry("900x600")
         self.root.minsize(600, 400)
-        PLATFORM_METHODS[CURRENT_OS]["icons"]().set_window_icon(self.root)
+        PlatformHandler().get("icons").set_window_icon(self.root)
         
         # Splash integrado
         self.splash = SplashFrame(self.root, title="Cargando Launcher...")
@@ -467,15 +467,8 @@ class GamePlatformFrame(ttk.Frame):
         self.img = Image.open(os.path.join(ICONS, f"no_icon.ico")).resize((16, 16), Image.LANCZOS)
         self.default_icon= ImageTk.PhotoImage(self.img)
         self.gamelaunch = GameLauncherController()
-        self.gamelaunch.register_ui(self.platform_name, self)
-        self.shortcutcreator = PLATFORM_METHODS[CURRENT_OS]["shortcut"]()  
+        self.gamelaunch.register_ui(self.platform_name, self)  
 
-        self.renderer = TkMenuRenderer()
-        self.options_provider = PLATFORM_METHODS[CURRENT_OS]["menu-options"]() 
-    
-
-        self.file_walker = PLATFORM_METHODS[CURRENT_OS]["paths"]()
-        self.ProviderOfIcons = PLATFORM_METHODS[CURRENT_OS]["icons"]()
         db.ensure(f"{platform_name}.favorites", [])
         
         self.rowconfigure(0, weight=0)
@@ -578,13 +571,14 @@ class GamePlatformFrame(ttk.Frame):
         _close_menu_popup(self)
 
         game_path = db.get(f"{self.platform_name}.game_list.{game_name}")
-        return self.shortcutcreator.create_direct_access(game_name, game_path)
+        PlatformHandler().get("shortcut").create_direct_access(game_name, game_path)
+        
     
     def create_start_menu_shortcut(self, game_name):
         _close_menu_popup(self)
         
         game_path = db.get(f"{self.platform_name}.game_list.{game_name}")
-        self.shortcutcreator.create_start_menu_shortcut(game_name, game_path)
+        PlatformHandler().get("shortcut").create_direct_access(game_name, game_path)
 
     def launch_game(self): # lanza el ejecutable seleccionado
         _close_menu_popup(self)
@@ -665,7 +659,7 @@ class GamePlatformFrame(ttk.Frame):
         game_list = db.get_children(f"{platform_name}.game_list")
         for game_name, game_path in game_list.items():
             if search_text in game_name.lower():
-                icon = load_icon(self.ProviderOfIcons.get_icon(game_path)) or self.default_icon
+                icon = load_icon(PlatformHandler().get("icons").get_icon(game_path)) 
                 game_tree.icon_images[game_name] = icon
                 base_name = os.path.splitext(game_name)[0]
                 game_tree.insert("", "end", iid=game_name, text="", image=icon, values=(base_name,))
@@ -673,7 +667,8 @@ class GamePlatformFrame(ttk.Frame):
     def gotofolder(self, game_name):
         _close_menu_popup(self)
         platform_name = self.platform_name
-        self.file_walker.goto_folder(db.get(f"{platform_name}.game_list.{game_name}"))
+        PlatformHandler().get("paths").goto_folder(db.get(f"{platform_name}.game_list.{game_name}"))
+    
 
     def change_game_directory(self, game_name):
         _close_menu_popup(self)
@@ -742,10 +737,9 @@ class GamePlatformFrame(ttk.Frame):
         menu = custommenus.CustomPopupMenu(self)
         self.menu_popup = menu
 
-        options = self.options_provider.get_options(game_name, btn_props, self)
-
-        self.renderer.build(menu, options)
-
+        options = PlatformHandler().get("menu-options").get_options(game_name, btn_props, self)
+        TkMenuRenderer().build(menu, options)
+        
         menu.show(x_root, y_root)
   
     def clean_info(self):
@@ -762,7 +756,6 @@ class GameDetailsPanel(tb.Frame):
         self.current_game_displayed = None
         self.stop_watcher = True
         self.sessions_frame = None
-        self.ProviderOfIcons = PLATFORM_METHODS[CURRENT_OS]["icons"]()
         self.bind("<Destroy>", self.stop_session_watcher)
         
         
@@ -894,7 +887,7 @@ class GameDetailsPanel(tb.Frame):
                     # Pequeña fila con ícono + nombre
                     frame = tb.Frame(self)
                     frame.pack(fill="x", padx=20, pady=5)
-                    icon = load_icon(self.ProviderOfIcons.get_icon(path))
+                    icon = load_icon(PlatformHandler().get("icons").get_icon(path))
 
                     if icon:
                         icon_label = tk.Label(frame, image=icon)
@@ -942,7 +935,7 @@ class NotesWindow(tb.Toplevel):
         self.geometry("600x400")
         self.resizable(True, True)
         self.open = True
-        PLATFORM_METHODS[CURRENT_OS]["icons"]().set_window_icon(self, "sort_apps.ico")
+        PlatformHandler().get("icons").set_window_icon(self, "sort_apps.ico")
 
         self.game_name = game_name
         
@@ -984,7 +977,6 @@ class PropertiesWindow(custommenus.AutoCloseFrame):
         self.on_update_callback = on_update_callback
         self.on_update_tab = on_update_tab
         self.file_manager = FileManager()
-        self.file_walker = PLATFORM_METHODS[CURRENT_OS]["paths"]()
         
         self.build_ui()
 
@@ -1147,7 +1139,7 @@ class PropertiesWindow(custommenus.AutoCloseFrame):
             game_path_selected = path_listbox.get(selected[0])      
             if game_path_selected:
                 self.close_menu()
-                self.file_walker.goto_folder(game_path_selected)
+                PlatformHandler().get("paths").goto_folder(game_path_selected)
             else:
                 messagebox.showwarning("Atención", "No se pudo encontrar el Directorio")
         else:

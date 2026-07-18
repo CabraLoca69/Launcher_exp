@@ -1,12 +1,4 @@
 import sys
-
-from interface_files.tk_interface import TkLauncherUI
-from interface_files.qt_interface import QtLauncherUI
-from interface_files.ui_handler import init_event_bus
-
-from data_access.cloudsync import call_merge
-from data_access.datafiles import db, THEMES_DIR
-
 from helpers.helpers import GameLauncherController
 
 def main():
@@ -22,14 +14,17 @@ def main():
         start_tk_ui()
 
 def start_tk_ui():
+    from interface_files.tk_interface import TkLauncherUI
     init("Tk")
     TkLauncherUI().set()
 
 def start_qt_ui():
+    from interface_files.qt_interface import QtLauncherUI
     init("Qt")
     QtLauncherUI.launch_ui()
 
 def init(interface: str):
+    from interface_files.ui_handler import init_event_bus
     init_event_bus(interface)
     
 if __name__ == "__main__":

@@ -53,8 +53,8 @@ class QtEventBus(QObject, GameEventBus):
 
     def register_ui(self, platform, ui_instance):
         self.ui_registry[platform] = ui_instance
-        self._check_pending(platform)      # ¿quedó un aviso de cierre sin consumir?
-        self._check_running(platform, ui_instance)  # ¿hay un juego corriendo ahora mismo?
+        self._check_pending(platform) 
+        self._check_running(platform, ui_instance) 
 
 
     def notify_game_closed(self, platform_name, game_name):
@@ -72,7 +72,7 @@ class QtEventBus(QObject, GameEventBus):
         for game_name in game_list:
             if db.get(f"global.actual_running.{game_name}") is not None:
                 if hasattr(ui_instance, "mark_game_running"):
-                    ui_instance.mark_game_running(game_name)
+                    ui_instance.mark_game_running(game_name) #implementar en la ui
 
     def _on_game_closed(self, platform_name, game_name):
         ui = self.ui_registry.get(platform_name)

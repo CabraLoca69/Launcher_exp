@@ -157,7 +157,7 @@ class GameLauncherController:
     
     def __new__(cls, *args, **kwargs):
         if not cls._instance:
-            clean_orphaned_sessions()
+            SessionsCleaner().clean_orphaned_sessions()
             cls._instance = super(GameLauncherController, cls).__new__(cls, *args, **kwargs)
             
         return cls._instance
@@ -329,65 +329,39 @@ class GameLauncherController:
     def register_ui(self, platform, ui_instance):
         self.event_bus.register_ui(platform, ui_instance)
 
-def safe_askdirectory():
-    try:
-        folder = filedialog.askdirectory()
-        return folder
-    except KeyError as e:
-        if "__tk_choosedir" in str(e):
-            print("⚠️ El diálogo nativo de directorios no está disponible, usando alternativa.")
-            folder = filedialog.askopenfilename(mustexist=True, title="Seleccione una carpeta")
-            if folder:
-                import os
-                return os.path.dirname(folder)
-            return None
-        else:
-            raise
+class SessionsCleaner():
+    def clean_orphaned_sessions(self):
+        actual_running = db.get_children("global.actual_running") or {}
+        actual_sessions = db.get_children("global.actual_sessions") or {}
 
-def clean_orphaned_sessions():
-    actual_running = db.get_children("global.actual_running") or {}
-    actual_sessions = db.get_children("global.actual_sessions") or {}
+        alive_running = {}
+        alive_sessions = {}
 
-    alive_running = {}
-    alive_sessions = {}
+        for game_name, info in actual_running.items():
+            pid = info.get("pid")
+            if self.is_process_running(pid):
+                alive_running[game_name] = info
+                if game_name in actual_sessions:
+                    alive_sessions[game_name] = actual_sessions[game_name]
 
-    for game_name, info in actual_running.items():
-        pid = info.get("pid")
-        if is_process_running(pid):
-            alive_running[game_name] = info
-            if game_name in actual_sessions:
-                alive_sessions[game_name] = actual_sessions[game_name]
+        # Primero borrar todas las claves viejas
+        db.delete_prefix("global.actual_running")
+        db.delete_prefix("global.actual_sessions")
 
-    # Primero borrar todas las claves viejas
-    db.delete_prefix("global.actual_running")
-    db.delete_prefix("global.actual_sessions")
+        # Volver a crear las ramas desde cero
+        for game_name, info in alive_sessions.items():
+            db.set(f"global.actual_sessions.{game_name}", info)
 
-    # Volver a crear las ramas desde cero
-    for game_name, info in alive_sessions.items():
-        db.set(f"global.actual_sessions.{game_name}", info)
+        for game_name, info in alive_running.items():
+            db.set(f"global.actual_running.{game_name}", info)
 
-    for game_name, info in alive_running.items():
-        db.set(f"global.actual_running.{game_name}", info)
+    def is_process_running(self, pid):
+        try:
+            return psutil.pid_exists(pid) and psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
+        except Exception:
+            return False
 
-def toggle_favorite(platform_name, game_name, limit=8):
-    favorites = db.get(f"{platform_name}.favorites", [])
-    if game_name in favorites:
-        db.set(f"{platform_name}.favorites", [g for g in favorites if g != game_name])
-        return True, f"Juego '{game_name}' eliminado de favoritos."
-        
-    if len(favorites) >= limit:
-        return False, f"Solo se permiten {limit} favoritos por plataforma."
-
-    db.set(f"{platform_name}.favorites", favorites + [game_name])
-    return True,f"Juego '{game_name}' agregado a favoritos."
-
-def is_process_running(pid):
-    try:
-        return psutil.pid_exists(pid) and psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
-    except Exception:
-        return False
-
-class DataLoader():
+class DataManager():
     def __init__(self):
         self.grouped = True
         self.executable_detector = PLATFORM_METHODS[CURRENT_OS]["exedetect"]()
@@ -429,3 +403,31 @@ class DataLoader():
                 result["grouped"].append(game_info)
 
         return result
+
+    def toggle_favorite(platform_name, game_name, limit=8):
+        favorites = db.get(f"{platform_name}.favorites", [])
+        if game_name in favorites:
+            db.set(f"{platform_name}.favorites", [g for g in favorites if g != game_name])
+            return True, f"Juego '{game_name}' eliminado de favoritos."
+        
+        if len(favorites) >= limit:
+            return False, f"Solo se permiten {limit} favoritos por plataforma."
+
+        db.set(f"{platform_name}.favorites", favorites + [game_name])
+        return True,f"Juego '{game_name}' agregado a favoritos."
+
+#especifica de Tk
+def safe_askdirectory():
+    try:
+        folder = filedialog.askdirectory()
+        return folder
+    except KeyError as e:
+        if "__tk_choosedir" in str(e):
+            print("⚠️ El diálogo nativo de directorios no está disponible, usando alternativa.")
+            folder = filedialog.askopenfilename(mustexist=True, title="Seleccione una carpeta")
+            if folder:
+                import os
+                return os.path.dirname(folder)
+            return None
+        else:
+            raise

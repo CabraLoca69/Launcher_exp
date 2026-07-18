@@ -21,8 +21,8 @@ from data_access.datafiles import DATA_DIR, ICONS_CACHE_DIR, ICONS, CONFIG_FILE,
 
 from helpers.icon_utils import load_icon
 from helpers.safe_threading import safe_thread
-from helpers.helpers import (FileManager, GameLauncherController, DataLoader, 
-                            safe_askdirectory, toggle_favorite)
+from helpers.helpers import (FileManager, GameLauncherController, DataManager, 
+                            safe_askdirectory)
 
 from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
 
@@ -70,7 +70,7 @@ class TkLauncherUI:
         # Manager de sesiones
         self.session_manager = SessionManager(self.root, self)
         if CONFIG_FILE:
-            DataLoader().reload_in_thread(self, self.start)
+            DataManager().reload_in_thread(self, self.start)
         
         tabs = db.get("global.tab_order")
         if not tabs or not isinstance(tabs, list):
@@ -388,7 +388,7 @@ class DraggableNotebook(tb.Notebook):
     
     def call_populate(self, platform_name):
         all_data = []
-        all_data.append(DataLoader().collect_platform_data(platform_name))
+        all_data.append(DataManager().collect_platform_data(platform_name))
         populate_ui(all_data,self)
         self.save_tab_order()
 
@@ -688,7 +688,7 @@ class GamePlatformFrame(ttk.Frame):
     def toggle_favorite(self, game_name):
         _close_menu_popup(self)
     
-        toggle, msg = toggle_favorite(self.platform_name, game_name, self.FAVORITE_LIMIT)
+        toggle, msg = DataManager().toggle_favorite(self.platform_name, game_name, self.FAVORITE_LIMIT)
         if not toggle:
             messagebox.showwarning("Atención", msg)
             return
@@ -1340,11 +1340,11 @@ def update_ui(target):
         if sel_id is not None:
             notebook.after(0, restore_selection)
 
-    DataLoader().reload_in_thread(target, call)
+    DataManager().reload_in_thread(target, call)
 
 def call_populate(platform_name, target):
     def worker():
-        all_data = [DataLoader().collect_platform_data(platform_name)]
+        all_data = [DataManager().collect_platform_data(platform_name)]
         target.after(0, lambda: populate_ui(all_data, target))
 
     safe_thread(worker)

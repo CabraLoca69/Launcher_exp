@@ -18,7 +18,7 @@ from data_access.datafiles import DATA_DIR, THEMES_DIR, TOKEN_PATH, db
 from data_access.cloudsync import login_and_sync, call_merge
 
 from helpers.safe_threading import safe_thread
-from helpers.helpers import FileManager, DataLoader, GameLauncherController
+from helpers.helpers import FileManager, DataManager, GameLauncherController
 from helpers.qicon_utils import load_qicon
 
 from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
@@ -649,7 +649,7 @@ class MainWindow(QMainWindow):
             tab_order.append(platform_name)
             db.set("global.tab_order", tab_order)
  
-        data = DataLoader().collect_platform_data(platform_name)
+        data = DataManager().collect_platform_data(platform_name)
         self._add_platform_tab(data)
         self.tab_widget.setCurrentIndex(self.tab_widget.count() - 1)
  
@@ -731,7 +731,7 @@ class ReloadWorker(QObject):
 
         for platform_name in tab_order:
             self.progress.emit(f"Cargando {platform_name}...")
-            data = DataLoader().collect_platform_data(platform_name)
+            data = DataManager().collect_platform_data(platform_name)
             all_data.append(data)
 
         self.finished.emit(all_data)

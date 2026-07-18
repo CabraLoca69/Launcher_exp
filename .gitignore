@@ -1,4 +1,5 @@
 dist/
+build/
 data/icons/*.png
 data/icons_cache
 data/databases/

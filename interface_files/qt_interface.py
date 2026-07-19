@@ -304,17 +304,10 @@ class GameDetailPanel(QWidget):
         pass
  
     def _toggle_favorites(self):
-        game_name = self.current_game
-        platform_name = self.platform_name
-        favorites = db.get(f"{platform_name}.favorites", False)
-
-        if game_name in favorites:
-            new_favs = [g for g in favorites if g != game_name]
-            db.set(f"{platform_name}.favorites", new_favs)
-
-        else:
-            new_favs = favorites + [game_name]
-            db.set(f"{platform_name}.favorites", new_favs)
+        toggle, msg = DataManager().toggle_favorite(self.platform_name, self.current_game)
+        if not toggle:
+            print("implementalo vago")
+            return
         
         self.parent.favorites_panel.refresh()
  

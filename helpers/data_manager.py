@@ -5,6 +5,8 @@ from helpers.file_manager import FileManager
 from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
 from platform_adapters.platform_handler import PlatformHandler
 
+_favorites_limit= 6
+
 class DataManager():
     def __init__(self):
         self.grouped = True
@@ -47,7 +49,7 @@ class DataManager():
 
         return result
 
-    def toggle_favorite(platform_name, game_name, limit=8):
+    def toggle_favorite(self, platform_name, game_name, limit = _favorites_limit):
         favorites = db.get(f"{platform_name}.favorites", [])
         if game_name in favorites:
             db.set(f"{platform_name}.favorites", [g for g in favorites if g != game_name])

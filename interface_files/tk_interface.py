@@ -686,7 +686,7 @@ class GamePlatformFrame(ttk.Frame):
     def toggle_favorite(self, game_name):
         _close_menu_popup(self)
     
-        toggle, msg = DataManager().toggle_favorite(self.platform_name, game_name, self.FAVORITE_LIMIT)
+        toggle, msg = DataManager().toggle_favorite(self.platform_name, game_name)
         if not toggle:
             messagebox.showwarning("Atención", msg)
             return

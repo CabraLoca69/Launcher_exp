@@ -578,7 +578,7 @@ class GamePlatformFrame(ttk.Frame):
         _close_menu_popup(self)
         
         game_path = db.get(f"{self.platform_name}.game_list.{game_name}")
-        PlatformHandler().get("shortcut").create_direct_access(game_name, game_path)
+        PlatformHandler().get("shortcut").create_start_menu_shortcut(game_name, game_path)
 
     def launch_game(self): # lanza el ejecutable seleccionado
         _close_menu_popup(self)

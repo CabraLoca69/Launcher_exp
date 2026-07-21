@@ -122,8 +122,7 @@ StartupNotify=true"""
         return Path.home() / "Desktop"
 
     def _resolve_icon(self, game_name, game_path):      
-        cache_icon_path = ICONS_CACHE_DIR / f"{Path(game_path).stem}.png"
-        icons = load_icon(cache_icon_path)
+        cache_icon_path = ICONS_CACHE_DIR / f"{game_name}.png"
 
         if not cache_icon_path.exists():
             return Path("/usr/share/pixmaps/default.png")

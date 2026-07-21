@@ -26,6 +26,7 @@ from helpers.qicon_utils import load_qicon
 from platform_adapters.platform_handler import PlatformHandler
 
 from .qt_popups import InputDialog, ConfirmDialog, CustomPopupMenu
+from .qt_menus_renderer import QtMenuRenderer
 
 
 # Panel de favoritos
@@ -386,24 +387,22 @@ class PlatformTab(QWidget):
         self.right_stack.setCurrentIndex(1)
 
     def _on_game_double_clicked(self, item:QTreeWidgetItem, _col: int):
-        GameLauncherController().launch_game(item.text(0))
+        self.launch_game(item.text(0))
 
     def _on_game_right_click(self, pos):
         game = self.games_tree.itemAt(pos)
         if game is None:
-            return  # click derecho en espacio vacío, no mostrar nada
-
-        # opcional: seleccionar el item antes de mostrar el menú,
-        # para que quede claro sobre cuál vas a actuar
-        self.games_tree.setCurrentItem(game)
-
-        game_name = game.text(0)
-        global_pos = self.games_tree.viewport().mapToGlobal(pos)
-
+            game_name = None
+        else:
+            self.games_tree.setCurrentItem(game)
+            game_name = game.text(0)
+            self._on_game_clicked(game, 0) 
+        
         menu = CustomPopupMenu(self, on_close_callback=None)
-        menu.add_button("Jugar",          command=lambda: self._on_game_double_clicked(item, 0))
-        menu.add_button("Abrir carpeta",  command=lambda: self._open_game_folder(game_name))
-        menu.add_button("Eliminar",       command=self._delete_selected_item)
+        options = PlatformHandler().get("menu-options").get_options(game_name, False, self)
+        QtMenuRenderer().build(menu, options)
+        
+        global_pos = self.games_tree.viewport().mapToGlobal(pos)
         
         menu.show_at(global_pos, offset_x=2, offset_y=84)
    
@@ -440,15 +439,8 @@ class PlatformTab(QWidget):
 
         if removed:
             game_path = db.get(f"{platform_name}.game_list.{game_name}")
+            self.file_manager.delete_game(self.platform_name, game_name)
             self.file_manager.remove_game_icon(game_path)
-            
-            db.delete(f"{platform_name}.game_list.{game_name}")
-            db.delete(f"{platform_name}.game_times.{game_name}")
-            db.delete(f"{platform_name}.game_total_times.{game_name}")
-            favorites = db.get(f"{platform_name}.favorites", [])
-            if game_name in favorites:
-                favorites.remove(game_name)
-                db.set(f"{platform_name}.favorites", favorites)
         
         self.right_stack.setCurrentIndex(0)
 
@@ -460,6 +452,70 @@ class PlatformTab(QWidget):
         for i in range(self.games_tree.topLevelItemCount()):
             item = self.games_tree.topLevelItem(i)
             item.setHidden(text not in item.text(0).lower())
+
+    def launch_game(self, game_name):
+        GameLauncherController().launch_game(game_name)
+    
+    def confirm_remove(self):
+        dlg = ConfirmDialog(self, title="Eliminar juego",
+                            message="¿Estás seguro? Esta acción no se puede deshacer.",
+                            callback=self._on_confirm)
+        dlg.exec()
+    
+    def _on_confirm(self, value):
+        if value:
+            self._delete_selected_item()
+    
+    def add_exe(self):
+        exe_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Selecciona un ejecutable",
+            "",
+            "Ejecutables (*.exe);;Todos los archivos (*)"
+        )
+        if not exe_path:
+            return  # el usuario cancelo el dialogo
+
+        success, result = self.file_manager.add_game(self.platform_name, exe_path)
+        if not success:
+            QMessageBox.warning(self, "Juego duplicado.", result)
+            return
+
+        game_name = Path(exe_path).stem
+        icon = PlatformHandler().get("icons").get_icon(exe_path)
+        game_data = {'icon': icon, 'name': game_name, 'path': exe_path}
+
+        # actualizo el árbol sin recargar todo desde cero
+        self._add_game_item(game_data)
+        self._all_games.append(game_data)
+
+    def change_game_directory(self, game_name):
+        try:
+            exe_path, _ = QFileDialog.getOpenFileName(self,
+                                                    "Selecciona un ejecutable",
+                                                    "",
+                                                    "Ejecutables (*.exe);;Todos los archivos (*)")
+            if not exe_path:
+                return # El usuario canceló el diálogo
+
+            self.file_manager._set_game_path(self.platform_name, game_name, exe_path)
+
+        except Exception as e:
+            logging.exception("Error al cambiar el directorio del juego")
+            messagebox.showerror("Error", f"No se pudo guardar el nuevo ejecutable:\n{e}")
+    
+    def gotofolder(self, game_name):
+        PlatformHandler().get("paths").goto_folder(db.get(f"{self.platform_name}.game_list.{game_name}"))
+
+    def create_direct_access(self, game_name):
+        game_path = db.get(f"{self.platform_name}.game_list.{game_name}")
+        PlatformHandler().get("shortcut").create_direct_access(game_name, game_path)
+        
+    
+    def create_start_menu_shortcut(self, game_name):
+        game_path = db.get(f"{self.platform_name}.game_list.{game_name}")
+        PlatformHandler().get("shortcut").create_start_menu_shortcut(game_name, game_path)
+
  
 # clouding
 class CloudSettingsWindow(QDialog):
@@ -581,9 +637,13 @@ class MainWindow(QMainWindow):
         tab_order = db.get("global.tab_order", default=[]) or []
         if tab_order:
             self.empty_label.setText("Cargando plataformas...")
-            reload_with_thread(self, self._on_reload_finished)
+            self._start_reload(callback = self._on_reload_finished)
  
     # ------------------------------------------------------------------
+
+    def _start_reload(self, callback = None):
+        reload_with_thread(self, callback)
+
     def _on_reload_finished(self, all_data: list):
         for data in all_data:
             self._add_platform_tab(data)

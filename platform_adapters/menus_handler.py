@@ -23,14 +23,17 @@ class BaseMenuOptions(MenuOptions):
 
 class WindowsMenuOptions(BaseMenuOptions):
     def get_options(self, game_name, btn_props, frame):
-        options = self._play_option(btn_props, frame)
+        options= []
+        if game_name:
+            options = self._play_option(btn_props, frame)
         options += self._common_options(game_name, frame)
         return options
 
 class LinuxMenuOptions(BaseMenuOptions):
     def get_options(self, game_name, btn_props, frame):
-        options = self._play_option(btn_props, frame)
+        options= []
         if game_name:
+            options = self._play_option(btn_props, frame)
             options.append(("Steam ID", "info", lambda: frame.ask_steam_id(game_name)))
         options += self._common_options(game_name, frame)
         return options

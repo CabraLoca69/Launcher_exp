@@ -1,8 +1,6 @@
 import uuid
-from pathlib import Path
-import datafiles 
 
-MACHINE_ID_FILE = datafiles.DATA_DIR / "machine_id.txt"
+from .datafiles import MACHINE_ID_FILE
 
 def get_machine_id():
     """

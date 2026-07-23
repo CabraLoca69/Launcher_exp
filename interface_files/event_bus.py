@@ -1,0 +1,91 @@
+import time
+from PySide6.QtCore import QObject, Signal
+
+from helpers.safe_threading import safe_thread
+
+from data_access.datafiles import db
+
+# --- interfaz común ---
+class GameEventBus:
+    def register_ui(self, platform, ui_instance):
+        raise NotImplementedError
+
+    def notify_game_closed(self, platform_name, game_name):
+        raise NotImplementedError
+
+#Tk
+class TkEventBus(GameEventBus):
+    def __init__(self):
+        self.ui_registry = {}
+        self.update_thread_running = False
+
+    def register_ui(self, platform, ui_instance):
+        self.ui_registry[platform] = ui_instance
+        if not self.update_thread_running:
+            self.update_thread_running = True
+            safe_thread(self._watcher)
+
+    def notify_game_closed(self, platform_name, game_name):
+        # flag en db, la lee tk y actualiza 
+        db.set(f"global.update_ui.{platform_name}", game_name)
+
+    def _watcher(self):
+        while True:
+            time.sleep(2)
+            for platform_name, ui in list(self.ui_registry.items()):
+                game_name = db.get(f"global.update_ui.{platform_name}")
+                if not game_name:
+                    continue
+                db.delete(f"global.update_ui.{platform_name}")
+                try:
+                    ui.update_on_close(game_name, platform_name)
+                except Exception as e:
+                    logging.error(f"Error updating UI for {platform_name}: {e}")
+
+#Qt
+class QtEventBus(QObject, GameEventBus):
+    game_closed = Signal(str, str)
+
+    def __init__(self):
+        super().__init__()
+        self.ui_registry = {}
+        self.game_closed.connect(self._on_game_closed)
+
+    def register_ui(self, platform, ui_instance):
+        self.ui_registry[platform] = ui_instance
+        self._check_pending(platform) 
+        self._check_running(platform, ui_instance) 
+
+
+    def notify_game_closed(self, platform_name, game_name):
+        self.game_closed.emit(platform_name, game_name)
+
+    def _check_pending(self, platform_name):
+        game_name = db.get(f"global.update_ui.{platform_name}")
+        if game_name:
+            db.delete(f"global.update_ui.{platform_name}")
+            self.game_closed.emit(platform_name, game_name)
+
+    def _check_running(self, platform_name, ui_instance):
+        # revisa todos los juegos de esta plataforma buscando alguno con actual_running
+        game_list = db.get_children(f"{platform_name}.game_list")
+        for game_name in game_list:
+            if db.get(f"global.actual_running.{game_name}") is not None:
+                if hasattr(ui_instance, "mark_game_running"):
+                    ui_instance.mark_game_running(game_name) #implementar en la ui
+
+    def _on_game_closed(self, platform_name, game_name):
+        ui = self.ui_registry.get(platform_name)
+        if ui:
+            try:
+                ui.update_on_close(game_name, platform_name)
+            except Exception as e:
+                logging.error(f"Error updating UI for {platform_name}: {e}")
+
+#Sin ui, --launch en main
+class NullEventBus(GameEventBus):
+    def register_ui(self, platform, ui_instance):
+        pass # nadie lo deberia de llamar, no hace nada
+
+    def notify_game_closed(self, platform_name, game_name):
+        pass  # nadie escuchando, no hace nada

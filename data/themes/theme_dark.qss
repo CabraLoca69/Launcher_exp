@@ -1,0 +1,73 @@
+QMainWindow {
+    background-color: #1e1e1e;
+}
+
+#header {
+    background-color: #252525;
+    border-bottom: 1px solid #3a3a3a;
+}
+
+#sidebar {
+    background-color: #222;
+    border-right: 1px solid #333;
+}
+
+#rightPanel {
+    background-color: #1e1e1e;
+}
+
+QLineEdit {
+    background-color: #2b2b2b;
+    border: 1px solid #3c3c3c;
+    padding: 6px;
+    border-radius: 6px;
+    color: white;
+}
+
+QListWidget {
+    background-color: #1b1b1b;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 4px;
+}
+
+QTreeWidget {
+    background-color: #1b1b1b;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 4px;
+}
+
+QTabBar::tab {
+    background: #333;
+    padding: 8px 16px;
+    border-radius: 4px;
+    color: #ddd;
+    margin-right: 4px;
+}
+
+QTabBar::tab:selected {
+    background: #555;
+}
+
+customPopupMenu { 
+        background: #2b2b2b;
+        border: 1px solid #555; 
+        border-radius: 6px; 
+}
+
+confirmDialogTitle { 
+    font-size: 14px; 
+    font-weight: bold; 
+    color: #f0c040; 
+}
+
+btnSuccess { 
+    background: #2d6a2d; 
+    color: white; 
+}
+
+btnDanger  { background: transparent; 
+    color: #e05555; 
+    border: 1px solid #e05555; 
+}

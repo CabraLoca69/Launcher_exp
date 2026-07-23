@@ -1,34 +1,49 @@
-
 import sys
-import datafiles
-import cloudsync
-from interfaces import LauncherUI
-from helpers import GameLauncherController, clean_orphaned_sessions
+from helpers.games_launcher import GameLauncherController
 
 def main():
-    if "--launch" in sys.argv and "--platform" in sys.argv:
+    launcher_controler = GameLauncherController()
+    if "--launch" in sys.argv:
         game_name = sys.argv[sys.argv.index("--launch") + 1]
-        platform_name = sys.argv[sys.argv.index("--platform") + 1]
-        game_path = datafiles.config.get(platform_name, {}).get("game_list", {}).get(game_name)
-        launcher_controler = GameLauncherController()
-        if game_path:
-            launcher_controler.launch_game(game_name)
-        else:
-            print("No se encontró el juego.")
-            
+        launcher_controler.launch_game(game_name)
+               
+    elif "--qt" in sys.argv:
+        start_qt_ui()
+    
     else:
-        if datafiles.config["global"].get("cloud_sync_enabled"):
-            cloudsync.call_merge()
+        start_tk_ui()
 
-        clean_orphaned_sessions()  
-        launcherui = LauncherUI() 
-        launcher_controler = GameLauncherController()
-        launcherui.set()
-        datafiles.remove_temp_path()
-        
+def start_tk_ui():
+    from interface_files.tk_interface import TkLauncherUI
+    init("Tk")
+    TkLauncherUI().set()
+
+def start_qt_ui():
+    from interface_files.qt_interface import QtLauncherUI
+    init("Qt")
+    QtLauncherUI.launch_ui()
+
+def init(interface: str):
+    from interface_files.ui_handler import init_event_bus
+    init_event_bus(interface)
+    
 if __name__ == "__main__":
     main()
 
-# revisar boton de jugar desde favoritos
-# si abro un juego seguido del otro no cuenta las horas (Probarlo)
-# revisar cerrar el launcher con las notas abiertas no se guarda
+
+#### A implementar
+"""
+funcion para quitar acc directos y menu de inicio?
+guardar iconos de acc directo en .local/share/applications/icons/
+
+"""
+######## Reparar
+""" 
+
+self.parent.favorites_panel.refresh() revisar esto dentro de gamedetailspanel, intentar con signal
+
+hacer bien lo de agregar steam_id (se ve horrible)
+para esto se va a implementar una ventana nueva con opciones sobre los juegos 
+
+"""
+

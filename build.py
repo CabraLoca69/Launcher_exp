@@ -1,5 +1,4 @@
 import os
-import sys
 import platform
 import subprocess
 import shutil
@@ -21,19 +20,27 @@ def clean():
 def main():
     system = platform.system()
 
+    # Paths de íconos
+    ICON_ICO = os.path.join("data", "icons", "icon.ico")
+    ICON_PNG = os.path.join("data", "icons", "icon.png")
+
     if system == "Windows":
         output_name = f"{EXE_NAME}.exe"
-        ICON_PATH = os.path.join("data", "icons", "icon.ico")
+        ICON_PATH = ICON_ICO
+        ADD_DATA = f"{ICON_ICO};data/icons"
     else:
-        output_name = EXE_NAME # En Linux/Mac no hay .exe
-        ICON_PATH = os.path.join("data", "icons", "icon.png")
+        output_name = EXE_NAME
+        ICON_PATH = ICON_PNG
+        ADD_DATA = f"{ICON_PNG}:data/icons"   # En Linux/Mac se usa ":" como separador
 
     run([
         "pyinstaller",
-        "--onefile",
-        f"--icon={ICON_PATH}",
+        "--onedir",
         "--noconsole",
+        f"--icon={ICON_PATH}",
         "--hidden-import=PIL._tkinter_finder",
+        "--add-data", ADD_DATA,
+
         SCRIPT_NAME
     ])
 

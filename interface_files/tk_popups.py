@@ -1,6 +1,3 @@
-import os
-import psutil
-import re
 import ttkbootstrap as tb
 from tkinter import StringVar
 
@@ -8,7 +5,11 @@ class AutoCloseFrame(tb.Frame):
     def __init__(self, *args, on_close_callback=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.on_close_callback = on_close_callback
-        self.after(100, self.bind_click_outside)
+        self.after(10, self.bind_escape)
+        self.after(10, self.bind_click_outside)
+
+    def bind_escape(self):
+        self.bind_all("<Escape>", lambda e: self.on_close())
 
     def bind_click_outside(self):
         self.bind_all("<Button-1>", self.check_click_outside)
@@ -24,16 +25,20 @@ class AutoCloseFrame(tb.Frame):
             return
 
         if self.should_close(widget):
-            self.on_close(event)
+            self.on_close()
 
     def should_close(self, widget):
         return True
-    
-    def on_close(self, event=None):
+
+    def after_close(self, value = None):
         if self.on_close_callback:
             self.on_close_callback()
-        self.destroy()
 
+    def on_close(self, value = None):
+        self.unbind_all("<Escape>")
+        self.destroy()
+        self.after_close(value)
+        
     def _is_child_of(self, widget, parent):
         while widget:
             if widget == parent:
@@ -56,7 +61,7 @@ class CustomPopupMenu(AutoCloseFrame):
 
     def show(self, x_root, y_root):
         if self._menu_open:
-            self.destroy()
+            super().on_close()
         
         self.parent.update_idletasks()
 
@@ -71,20 +76,19 @@ class CustomPopupMenu(AutoCloseFrame):
         self.bind_click_outside()
         self._menu_open = True
 
-    def on_close(self, event):
+    def after_close(self, value = None):
         self._menu_open = False
-        self.destroy()
         self.unbind_all("<Button-1>")
         self.unbind_all("<Button-3>")
         if self.on_close_callback:
-            self.on_close_callback(event)
+            self.on_close_callback(True)
 
 class InputDialog(AutoCloseFrame):
-    def __init__(self, parent, prompt="Ingrese valor:", callback=None, cancel_callback=None):
+    def __init__(self, parent, prompt="Ingrese valor:", callback=None):
         super().__init__(parent, padding=10)
         self.callback = callback
-        self.cancel_callback = cancel_callback
         self.input_var = StringVar()
+        self.value = None
 
         tb.Label(self, text=prompt, font=("Segoe UI", 11), bootstyle="light").pack(padx=10, pady=(5, 5), anchor="w")
 
@@ -96,28 +100,28 @@ class InputDialog(AutoCloseFrame):
         btn_frame.pack(pady=(10, 0))
 
         tb.Button(btn_frame, text="Aceptar", bootstyle="success-outline", command=lambda:self._respond(True)).pack(side="left", padx=5)
-        tb.Button(btn_frame, text="Cancelar", bootstyle="danger-outline", command=lambda:self._respond(False)).pack(side="left", padx=5)
+        tb.Button(btn_frame, text="Cancelar", bootstyle="danger-outline", command=lambda:self._respond()).pack(side="left", padx=5)
 
-        self.bind_all("<Return>", lambda e: self._respond(True))
-        self.bind_all("<Escape>", lambda e: self._respond(False))
+        self.bind_all("<Return>", lambda e: self._respond( True))
+        self.bind_all("<Escape>", lambda e: self._respond())
 
-    def _respond(self, confirmed):
+    def _respond(self, confirmed= False):
         if confirmed:
             value = self.input_var.get().strip().title()
-            if value and self.callback:
-                self.destroy()
-                self.callback(value)
+            if not value:
+                value = False
 
         if not confirmed:
-            if self.cancel_callback:
-                self.destroy()
-                self.cancel_callback()
+            value = False
 
-    def on_close(self, event=None):
-        if self.cancel_callback:
-                self.destroy()
-                self.cancel_callback()
+        super().on_close(value)
 
+    def after_close(self, value):
+        self.unbind_all("<Return>")
+        if self.callback:
+            self.callback(value)
+        
+        
 class ConfirmDialog(AutoCloseFrame):
     def __init__(self, parent, title="Confirmar", message="¿Estás seguro?", callback=None):
         super().__init__(parent, padding=20)
@@ -137,12 +141,14 @@ class ConfirmDialog(AutoCloseFrame):
                   command=lambda:self._respond(True)).pack(side="left", padx=5)
 
         tb.Button(btn_frame, text="❌ No", bootstyle="danger-outline", width=10,
-                  command=lambda:self._respond(False)).pack(side="left", padx=5)
+                  command=lambda:self._respond()).pack(side="left", padx=5)
 
         self.bind_all("<Return>", lambda e: self._respond(True))
-        self.bind_all("<Escape>", lambda e: self._respond(False))
-        
-    def _respond(self, confirmed):
+        self.bind_all("<Escape>", lambda e: self._respond())
+
+    def after_close(self, confirmed):
         if self.callback:
-            self.destroy()
             self.callback(confirmed)
+
+    def _respond(self, confirmed= False):
+        super().on_close(confirmed)

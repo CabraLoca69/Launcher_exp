@@ -8,6 +8,14 @@ __pycache__
 pruebas.py 
 *.bat
 *.txt
+build/
+data/icons/*.png
+data/icons_cache
+data/databases/
+data/cloud_files/machine_id.txt
+__pycache__
+upload_err.log  
+*.bat
 *.spec
 *.json
 *.log

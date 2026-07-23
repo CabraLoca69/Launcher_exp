@@ -1,5 +1,7 @@
 dist/
+data/databases/
 data/icons_cache
+data/icons/*.png
 data/config.json
 data/machine_id.txt
 __pycache__

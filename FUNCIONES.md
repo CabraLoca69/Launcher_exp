@@ -225,8 +225,7 @@ Patrón repetido en casi todos estos archivos: una clase base/interfaz + una imp
 - `tk_menus_renderer.py :: TkMenuRenderer.build(self, menu, options)` — equivalente Tk de `QtMenuRenderer.build`.
 - `tk_popups.py`: `AutoCloseFrame` (bind_escape, bind_click_outside, check_click_outside, should_close, after_close, on_close, `_is_child_of`), `CustomPopupMenu` (add_button, show, after_close), `InputDialog` (`_respond`, after_close), `ConfirmDialog` (after_close, `_respond`).
 
-> 🔎 **Importante para vos:** casi todo `qt_interface.py` tiene su espejo en `tk_interface.py` (`gotofolder`, `create_direct_access`, `launch_game`, `toggle_favorite`, `confirm_remove`, `add_exe`, `change_game_directory`, `filter_games`/`_filter_games`, `show_favorites`, `CloudSettingsWindow`...). **Esto es esperado** (dos interfaces en paralelo, como dice `ARQUITECTURA.md`) — no es la duplicación que te preocupa. La real a vigilar es si dentro de **una sola** de las dos (ej. solo en `tk_interface.py`, que ya tiene 56K y muchas clases) aparecen dos métodos distintos haciendo lo mismo. Con este listado plano ya podés buscar por nombre antes de escribir uno nuevo.
-
+> 🔎 **Importante:** casi todo `qt_interface.py` tiene su espejo en `tk_interface.py` (`gotofolder`, `create_direct_access`, `launch_game`, `toggle_favorite`, `confirm_remove`, `add_exe`, `change_game_directory`, `filter_games`/`_filter_games`, `show_favorites`, `CloudSettingsWindow`...). **Esto es esperado** (dos interfaces en paralelo, como dice `ARQUITECTURA.md`)  
 ---
 
 

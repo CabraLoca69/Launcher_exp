@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QCheckBox
 )
 
-from PySide6.QtCore import Qt, QSize, QObject, QThread, Signal, QTimer
+from PySide6.QtCore import Qt, QSize, QObject, QThread, Signal, QTimer, QPoint
 
 from PySide6.QtGui import QShortcut, QKeySequence
 
@@ -143,6 +143,8 @@ class FavoritesPanel(QWidget):
 
 # Panel de detalles de un juego (panel derecho)
 class GameDetailPanel(QWidget):
+    context_menu_requested = Signal(QPoint, bool)
+
     def __init__(self, platform_name: str, parent=None):
         super().__init__(parent)
         self.platform_name = platform_name
@@ -313,6 +315,10 @@ class GameDetailPanel(QWidget):
         self.parent.favorites_panel.refresh()
  
     def _show_props_menu(self):
+        global_pos = self.btn_settings.mapToGlobal(
+            self.btn_settings.rect().bottomLeft())
+
+        self.context_menu_requested.emit(global_pos, True)
         pass
  
 #arbol deseleccionable
@@ -358,6 +364,10 @@ class PlatformTab(QWidget):
 
         supr_shortcut = QShortcut(QKeySequence("Delete"), self.games_tree)
         supr_shortcut.activated.connect(self._delete_selected_item)
+
+        self.detail_panel.context_menu_requested.connect(
+            lambda global_pos, btn_props: self.show_game_menu(
+            self.detail_panel.current_game, global_pos, btn_props, offset_x=-143, offset_y=84))
  
     # ------------------------------------------------------------------
     def _build_sidebar(self):
@@ -389,7 +399,7 @@ class PlatformTab(QWidget):
     def _on_game_double_clicked(self, item:QTreeWidgetItem, _col: int):
         self.launch_game(item.text(0))
 
-    def _on_game_right_click(self, pos):
+    def _on_game_right_click(self, pos, btn_props = False):
         game = self.games_tree.itemAt(pos)
         if game is None:
             game_name = None
@@ -398,15 +408,18 @@ class PlatformTab(QWidget):
             game_name = game.text(0)
             self._on_game_clicked(game, 0) 
         
-        menu = CustomPopupMenu(self, on_close_callback=None)
-        options = PlatformHandler().get("menu-options").get_options(game_name, False, self)
-        QtMenuRenderer().build(menu, options)
-        
         global_pos = self.games_tree.viewport().mapToGlobal(pos)
-        
-        menu.show_at(global_pos, offset_x=2, offset_y=84)
+        self.show_game_menu(game_name, global_pos)
    
     # ------------------------------------------------------------------
+    def show_game_menu(self, game_name, global_pos, btn_props=False, offset_x=2, offset_y=84):
+        menu = CustomPopupMenu(self, on_close_callback=None)
+        options = PlatformHandler().get("menu-options").get_options(game_name, btn_props, self)
+        QtMenuRenderer().build(menu, options)
+        menu.show_at(global_pos, offset_x=offset_x, offset_y=offset_y)
+
+    # ------------------------------------------------------------------
+
     def fill_games(self, games: list):
         self.games_tree.clear()
         self._all_games = games

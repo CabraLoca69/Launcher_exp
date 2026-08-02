@@ -7,11 +7,11 @@ def main():
         game_name = sys.argv[sys.argv.index("--launch") + 1]
         launcher_controler.launch_game(game_name)
                
-    elif "--qt" in sys.argv:
-        start_qt_ui()
+    elif "--tk" in sys.argv:
+        start_tk_ui()
     
     else:
-        start_tk_ui()
+        start_qt_ui()
 
 def start_tk_ui():
     from interface_files.tk_interface import TkLauncherUI
@@ -29,21 +29,3 @@ def init(interface: str):
     
 if __name__ == "__main__":
     main()
-
-
-#### A implementar
-"""
-funcion para quitar acc directos y menu de inicio?
-guardar iconos de acc directo en .local/share/applications/icons/
-
-"""
-######## Reparar
-""" 
-
-self.parent.favorites_panel.refresh() revisar esto dentro de gamedetailspanel, intentar con signal
-
-hacer bien lo de agregar steam_id (se ve horrible)
-para esto se va a implementar una ventana nueva con opciones sobre los juegos 
-
-"""
-

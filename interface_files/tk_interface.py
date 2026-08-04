@@ -466,8 +466,7 @@ class GamePlatformFrame(ttk.Frame):
         self.file_manager = FileManager()
         self.img = Image.open(os.path.join(ICONS, f"no_icon.ico")).resize((16, 16), Image.LANCZOS)
         self.default_icon= ImageTk.PhotoImage(self.img)
-        self.gamelaunch = GameLauncherController()
-        self.gamelaunch.register_ui(self.platform_name, self)  
+        GameLauncherController().register_ui(self.platform_name, self)  
 
         db.ensure(f"{platform_name}.favorites", [])
         
@@ -591,7 +590,7 @@ class GamePlatformFrame(ttk.Frame):
             game_name = game_tree.item(item_id, "values")[0]
             game_path = db.get(f"{platform_name}.game_list.{game_name}")
             if game_path:
-                self.gamelaunch.launch_game(game_name)
+                GameLauncherController().launch_game(game_name)
             else:
                 messagebox.showwarning("Atención", "No se pudo encontrar el juego")
         else:

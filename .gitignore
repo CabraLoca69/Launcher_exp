@@ -6,7 +6,7 @@ data/databases/
 data/cloud_files/machine_id.txt
 __pycache__
 upload_err.log  
-PENDINGS.md
+documentacion/PENDINGS.md
 *.bat
 *.spec
 *.json

@@ -11,8 +11,9 @@ from PySide6.QtCore import Qt, QSize, QObject, QThread, Signal, QTimer, QPoint
 from PySide6.QtGui import QShortcut, QKeySequence
 
 import sys
-from pathlib import Path
 import logging
+from pathlib import Path
+from datetime import datetime
 
 from data_access.datafiles import DATA_DIR, THEMES_DIR, TOKEN_PATH, db
 from data_access.cloudsync import login_and_sync, call_merge
@@ -28,6 +29,86 @@ from platform_adapters.platform_handler import PlatformHandler
 from .qt_popups import InputDialog, ConfirmDialog, CustomPopupMenu
 from .qt_menus_renderer import QtMenuRenderer
 
+from .ui_handler import get_event_bus
+
+# label de sesiones, abajo en el mainwindow
+class SessionsBar(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.sessions = {}  # game_name -> dict con widgets + start_time
+        self.layout_ = QVBoxLayout(self)
+        self.hide()  # arranca oculta, como en tk
+
+        bus = get_event_bus()
+        bus.game_started.connect(self.add_session)
+        bus.game_closed.connect(lambda platform, game_name: self.remove_session(game_name))
+
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self._update_labels)
+        self.timer.start(60000)  # cada 60s, como el tk viejo
+
+    def add_session(self, platform_name, game_name):
+        if game_name in self.sessions:
+            return
+
+        frame = QFrame()
+        frame.setObjectName("sessionBarFrame")
+        frame_layout = QHBoxLayout(frame)
+        frame_layout.setContentsMargins(12, 8, 12, 8)
+        frame_layout.setSpacing(10)
+
+        name_label = QLabel(f"🎮 {game_name}")
+        name_label.setObjectName("sessionBarName")
+        frame_layout.addWidget(name_label)
+
+        frame_layout.addStretch()
+
+        time_label = QLabel("🕒 0 min")
+        time_label.setObjectName("sessionBarTime")
+        frame_layout.addWidget(time_label)
+
+        close_btn = QPushButton("❌")
+        close_btn.setObjectName("btnCloseSession")  # reusa el estilo que ya tenés para acciones destructivas
+        close_btn.setFixedWidth(30)
+        close_btn.clicked.connect(lambda: self.force_close(game_name))
+        frame_layout.addWidget(close_btn)
+
+        self.layout_.addWidget(frame)
+
+        session_info = db.get(f"global.actual_sessions.{game_name}")
+        start_time = (
+            datetime.fromisoformat(session_info["start_time"])
+            if session_info else datetime.now()
+        )
+
+        self.sessions[game_name] = {
+            "platform": platform_name,
+            "start_time": start_time,
+            "time_label": time_label,
+            "frame": frame,
+        }
+
+        if len(self.sessions) == 1:
+            self.show()
+
+        self._update_labels()
+
+    def remove_session(self, game_name):
+        session = self.sessions.pop(game_name, None)
+        if session:
+            session["frame"].deleteLater()
+        if not self.sessions:
+            self.hide()
+
+    def _update_labels(self):
+        for game_name, session in self.sessions.items():
+            elapsed = datetime.now() - session["start_time"]
+            minutes = int(elapsed.total_seconds() // 60)
+            session["time_label"].setText(f"🕒 {minutes} min")
+
+    def force_close(self, game_name):
+        platform = self.sessions[game_name]["platform"]
+        GameLauncherController().force_close_game(platform, game_name)
 
 # Panel de favoritos
 class FavoritesPanel(QWidget):
@@ -144,6 +225,7 @@ class FavoritesPanel(QWidget):
 # Panel de detalles de un juego (panel derecho)
 class GameDetailPanel(QWidget):
     context_menu_requested = Signal(QPoint, bool)
+    toggle_favorites = Signal(str)  # game_name
 
     def __init__(self, platform_name: str, parent=None):
         super().__init__(parent)
@@ -307,13 +389,8 @@ class GameDetailPanel(QWidget):
         pass
  
     def _toggle_favorites(self):
-        toggle, msg = DataManager().toggle_favorite(self.platform_name, self.current_game)
-        if not toggle:
-            print("implementalo vago")
-            return
+        self.toggle_favorites.emit(self.current_game)
         
-        self.parent.favorites_panel.refresh()
- 
     def _show_props_menu(self):
         global_pos = self.btn_settings.mapToGlobal(
             self.btn_settings.rect().bottomLeft())
@@ -339,6 +416,7 @@ class PlatformTab(QWidget):
         super().__init__(parent)
         self.platform_name = platform_name
         self.file_manager = FileManager()
+        GameLauncherController().register_ui(self.platform_name, self)
  
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -368,6 +446,8 @@ class PlatformTab(QWidget):
         self.detail_panel.context_menu_requested.connect(
             lambda global_pos, btn_props: self.show_game_menu(
             self.detail_panel.current_game, global_pos, btn_props, offset_x=-143, offset_y=84))
+
+        self.detail_panel.toggle_favorites.connect(self.toggle_favorite)
  
     # ------------------------------------------------------------------
     def _build_sidebar(self):
@@ -418,6 +498,22 @@ class PlatformTab(QWidget):
         QtMenuRenderer().build(menu, options)
         menu.show_at(global_pos, offset_x=offset_x, offset_y=offset_y)
 
+    def update_on_close(self, game_name, platform_name):
+        item = self._find_item_by_name(game_name)
+        if item is None:
+            logging.warning(f"No se encontró el item del juego {game_name} tras el cierre")
+            return
+
+        self.games_tree.setCurrentItem(item)
+        self._on_game_clicked(item, 0)
+
+    def toggle_favorite(self, game_name):
+        toggle, msg = DataManager().toggle_favorite(self.platform_name, game_name)
+        if not toggle:
+            QMessageBox.warning(self, "Favorito", msg)
+            return
+        self.favorites_panel.refresh()
+
     # ------------------------------------------------------------------
 
     def fill_games(self, games: list):
@@ -465,6 +561,13 @@ class PlatformTab(QWidget):
         for i in range(self.games_tree.topLevelItemCount()):
             item = self.games_tree.topLevelItem(i)
             item.setHidden(text not in item.text(0).lower())
+
+    def _find_item_by_name(self, game_name):
+        for i in range(self.games_tree.topLevelItemCount()):
+            item = self.games_tree.topLevelItem(i)
+            if item.text(0) == game_name:
+                return item
+        return None
 
     def launch_game(self, game_name):
         GameLauncherController().launch_game(game_name)
@@ -517,6 +620,11 @@ class PlatformTab(QWidget):
             logging.exception("Error al cambiar el directorio del juego")
             messagebox.showerror("Error", f"No se pudo guardar el nuevo ejecutable:\n{e}")
     
+    def ask_steam_id(self, game_name):
+        dlg = InputDialog(self, prompt="Ingresar Steam ID",
+                          callback=lambda value: db.set(f"global.steam_ids.{game_name}", value))
+        dlg.exec()
+
     def gotofolder(self, game_name):
         PlatformHandler().get("paths").goto_folder(db.get(f"{self.platform_name}.game_list.{game_name}"))
 
@@ -524,12 +632,11 @@ class PlatformTab(QWidget):
         game_path = db.get(f"{self.platform_name}.game_list.{game_name}")
         PlatformHandler().get("shortcut").create_direct_access(game_name, game_path)
         
-    
     def create_start_menu_shortcut(self, game_name):
         game_path = db.get(f"{self.platform_name}.game_list.{game_name}")
         PlatformHandler().get("shortcut").create_start_menu_shortcut(game_name, game_path)
 
- 
+
 # clouding
 class CloudSettingsWindow(QDialog):
     login_finished = Signal(bool)  # ok, email
@@ -651,6 +758,9 @@ class MainWindow(QMainWindow):
         if tab_order:
             self.empty_label.setText("Cargando plataformas...")
             self._start_reload(callback = self._on_reload_finished)
+        
+        self.sessions_bar = SessionsBar()
+        root_layout.addWidget(self.sessions_bar)
  
     # ------------------------------------------------------------------
 

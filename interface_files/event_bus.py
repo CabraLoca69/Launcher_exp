@@ -2,6 +2,7 @@ import time
 from PySide6.QtCore import QObject, Signal
 
 from helpers.safe_threading import safe_thread
+from helpers.db_qwatcher import RunningGameWatcher
 
 from data_access.datafiles import db
 
@@ -10,9 +11,12 @@ class GameEventBus:
     def register_ui(self, platform, ui_instance):
         raise NotImplementedError
 
+    def notify_game_started(self, platform_name, game_name): 
+        raise NotImplementedError 
+
     def notify_game_closed(self, platform_name, game_name):
         raise NotImplementedError
-
+    
 #Tk
 class TkEventBus(GameEventBus):
     def __init__(self):
@@ -45,20 +49,24 @@ class TkEventBus(GameEventBus):
 #Qt
 class QtEventBus(QObject, GameEventBus):
     game_closed = Signal(str, str)
+    game_started = Signal(str, str)
 
     def __init__(self):
         super().__init__()
         self.ui_registry = {}
         self.game_closed.connect(self._on_game_closed)
+        self._watchers = {}
 
     def register_ui(self, platform, ui_instance):
         self.ui_registry[platform] = ui_instance
         self._check_pending(platform) 
         self._check_running(platform, ui_instance) 
 
-
     def notify_game_closed(self, platform_name, game_name):
         self.game_closed.emit(platform_name, game_name)
+
+    def notify_game_started(self, platform_name, game_name):
+        self.game_started.emit(platform_name, game_name)
 
     def _check_pending(self, platform_name):
         game_name = db.get(f"global.update_ui.{platform_name}")
@@ -67,12 +75,17 @@ class QtEventBus(QObject, GameEventBus):
             self.game_closed.emit(platform_name, game_name)
 
     def _check_running(self, platform_name, ui_instance):
-        # revisa todos los juegos de esta plataforma buscando alguno con actual_running
         game_list = db.get_children(f"{platform_name}.game_list")
         for game_name in game_list:
             if db.get(f"global.actual_running.{game_name}") is not None:
                 if hasattr(ui_instance, "mark_game_running"):
-                    ui_instance.mark_game_running(game_name) #implementar en la ui
+                    ui_instance.mark_game_running(game_name)
+                self.game_started.emit(platform_name, game_name)
+                watcher = RunningGameWatcher(platform_name, game_name)
+                watcher.game_closed_detected.connect(
+                    lambda p, g: self._on_game_closed(p, g)
+                )
+                self._watchers.setdefault(platform_name, []).append(watcher)
 
     def _on_game_closed(self, platform_name, game_name):
         ui = self.ui_registry.get(platform_name)
@@ -86,6 +99,10 @@ class QtEventBus(QObject, GameEventBus):
 class NullEventBus(GameEventBus):
     def register_ui(self, platform, ui_instance):
         pass # nadie lo deberia de llamar, no hace nada
+    
+    def notify_game_started(self, platform_name, game_name):
+        pass
 
     def notify_game_closed(self, platform_name, game_name):
         pass  # nadie escuchando, no hace nada
+    

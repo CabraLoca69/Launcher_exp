@@ -28,6 +28,8 @@ Convención: `archivo.py :: Clase.metodo(args)` — descripción corta. Los mét
 - `__init__(self, file_path)` — abre/crea la conexión a la db.
 - `_setup(self)` — crea la tabla si no existe.
 - `_resolve_path(self, keypath)` — convierte listas en clave tipo `"a.b.c"`.
+- `_fetch_row(self, query, params)` — ejecuta una consulta a la db.
+- `resolve_game(self, game_name)` — devuelve la plataforma y el path de un juego.
 - `get(self, keypath, default)` — lee un valor por keypath.
 - `set(self, keypath, value)` — escribe un valor.
 - `delete(self, keypath)` — borra una clave puntual.
@@ -76,6 +78,10 @@ Convención: `archivo.py :: Clase.metodo(args)` — descripción corta. Los mét
 - `collect_platform_data(self, platform_name)` — arma el dict de datos de una plataforma puntual (juegos, tiempos, favoritos) para mostrarlo en la UI.
 - `toggle_favorite(self, platform_name, game_name, limit)` — marca/desmarca favorito, respetando un límite máximo.
 
+**`db_qwatcher.py :: RunningGameWatcher`**
+- `__init__(self)`
+- `_check(self)` — revisa periodicamente (timer seteado en init) la key de la db que indica si un juego esta corriendo.
+
 **`file_manager.py :: FileManager`**
 - `__init__(self)`
 - `add_folder(self, platform_name, folder)` — agrega un directorio a una plataforma y dispara el escaneo.
@@ -92,7 +98,6 @@ Convención: `archivo.py :: Clase.metodo(args)` — descripción corta. Los mét
 - `__new__(cls, *args, **kwargs)` — implementa el singleton; primera vez limpia sesiones huérfanas.
 - `__init__(self)`
 - `launch_game(self, game_name)` — método principal: resuelve el juego, lo lanza vía `platform_adapters/runners_handler`, y arranca el guardado periódico + finalización.
-  - `resolve_game(game_name)` — (interna) busca en la db a qué plataforma pertenece el juego.
   - `execute()` — (interna) el cuerpo real que corre en el hilo (lanza el proceso, espera a que cierre).
   - `periodic_saver()` — (interna) cada 60s llama a `_save_playtime` y sube a la nube si corresponde.
 - `_save_playtime(self, platform_name, game_name, start_time, last_update_time, now)` — guarda tiempo **parcial** mientras el juego sigue corriendo (se llama cada 60s desde `periodic_saver`).

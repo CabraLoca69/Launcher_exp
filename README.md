@@ -75,4 +75,4 @@ de otra forma no va a abrirse nada o se abrira roto.
 
 ---
 
-📄 Para el detalle interno de funciones y arquitectura, ver ['ARQUITECTURA.md'](./ARQUITECTURA.md) y ['FUNCIONES.md'](./FUNCIONES.md).
+📄 Para el detalle interno de funciones y arquitectura, ver ['ARQUITECTURA'](./documentacion/ARQUITECTURA.md) y ['FUNCIONES'](./documentacion/FUNCIONES.md).

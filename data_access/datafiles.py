@@ -1,3 +1,4 @@
+#--------- imports internos -------
 from .sqlitedb import SQLiteDatabase
 from base_path import get_portable_base_dir
 

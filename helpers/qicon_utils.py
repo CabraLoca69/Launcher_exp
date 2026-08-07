@@ -6,6 +6,7 @@ from io import BytesIO
 from PySide6.QtGui import QIcon, QPixmap
 from pathlib import Path
 
+#--------- imports internos -------
 from data_access.datafiles import ICONS
 
 from .icon_utils import ico_to_png

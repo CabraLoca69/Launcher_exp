@@ -3,6 +3,7 @@ import os
 import psutil
 import time
 
+#--------- imports internos -------
 from data_access.datafiles import db
 
 INVALID_NAMES = {

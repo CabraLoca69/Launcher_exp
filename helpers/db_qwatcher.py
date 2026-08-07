@@ -1,5 +1,6 @@
 from PySide6.QtCore import QObject, Signal, QTimer
 
+#--------- imports internos -------
 from data_access.datafiles import db
 
 class RunningGameWatcher(QObject):

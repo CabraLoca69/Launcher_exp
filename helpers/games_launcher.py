@@ -5,14 +5,14 @@ import json
 import time        
 from datetime import datetime  
 
-from interface_files.ui_handler import get_event_bus
-
+#-------- imports internos -------
+from data_access.cloudsync import call_upload
 from data_access.datafiles import db
 from data_access.machine_id import get_machine_id
 
 from helpers.safe_threading import safe_thread
 
-from data_access.cloudsync import call_upload
+from interface_files.ui_handler import get_event_bus
 
 from platform_adapters.platform_handler import PlatformHandler
 

@@ -1,10 +1,12 @@
 import sys
-from .runners_handler import WindowsRunner, LinuxSelector
+
+#--------- imports internos -------
 from .executables_handler import WindowsExecutableDetector, UnixExecutableDetector
-from .shortcuts_handler import WindowsShortcutCreator, LinuxShortcutCreator
-from .paths_handler import WindowsGoToFolder, LinuxGoToFolder
 from .icons_handler import WindowsIconProvider, LinuxIconProvider
 from .menus_handler import WindowsMenuOptions, LinuxMenuOptions
+from .paths_handler import WindowsGoToFolder, LinuxGoToFolder
+from .runners_handler import WindowsRunner, LinuxSelector
+from .shortcuts_handler import WindowsShortcutCreator, LinuxShortcutCreator
 
 
 def _detect_os() -> str:

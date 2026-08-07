@@ -6,6 +6,7 @@ import ctypes
 from pathlib import Path
 from PIL import Image, ImageTk
 
+#--------- imports internos -------
 from data_access.datafiles import ICONS, ICONS_CACHE_DIR
 from helpers.icon_utils import ico_to_png
 
@@ -56,7 +57,7 @@ class WindowsIconProvider(IconProvider):
     
     #_______extrae iconos de un .exe _____
     def get_icon(self, path, size=(16, 16)):
-        exe_name = Path(exe_path).stem
+        exe_name = Path(path).stem
         ico_path = Path(ICONS_CACHE_DIR) / f"{exe_name}.ico"
         ico_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -64,7 +65,7 @@ class WindowsIconProvider(IconProvider):
             return ico_path
 
         try:
-            large, small = win32gui.ExtractIconEx(exe_path, 0)
+            large, small = win32gui.ExtractIconEx(path, 0)
             hicon = large[0] if large else (small[0] if small else None)
 
             if hicon:

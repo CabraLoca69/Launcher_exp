@@ -47,4 +47,3 @@ db.ensure("global.email", None)
 db.ensure("global.allow_multiple_games", True)
 db.ensure("global.tab_order", [])
 db.ensure("global.last_selected_tab", None)
-

@@ -170,6 +170,3 @@ class SQLiteDatabase:
                 children[subkey] = None
 
         return children
-    
-
-

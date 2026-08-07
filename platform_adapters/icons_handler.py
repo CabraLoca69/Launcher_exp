@@ -215,7 +215,3 @@ class LinuxIconProvider(IconProvider):
             return fixed_png
 
         return _fallback_icon(size)
-
-
-
-

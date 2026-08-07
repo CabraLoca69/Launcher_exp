@@ -147,7 +147,3 @@ class FileManager():
 
             except OSError as e:
                 print(f"No se pudo eliminar {icon_file}: {e}")
-            
-
-
-

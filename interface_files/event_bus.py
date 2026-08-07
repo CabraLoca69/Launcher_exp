@@ -105,4 +105,3 @@ class NullEventBus(GameEventBus):
 
     def notify_game_closed(self, platform_name, game_name):
         pass  # nadie escuchando, no hace nada
-    

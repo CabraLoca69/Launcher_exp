@@ -16,5 +16,3 @@ class WindowsGoToFolder(PathWalker):
 class LinuxGoToFolder(PathWalker):
     def goto_folder(self, path):
         subprocess.Popen(["xdg-open", os.path.dirname(path)])
-
-

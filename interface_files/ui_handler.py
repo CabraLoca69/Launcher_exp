@@ -1,6 +1,7 @@
+#--------- imports internos -------
 from .event_bus import TkEventBus, QtEventBus, NullEventBus
-from .tk_menus_renderer import TkMenuRenderer
 from .qt_menus_renderer import QtMenuRenderer
+from .tk_menus_renderer import TkMenuRenderer
 
 _INTERFACE_CLASSES = {
     "Tk": TkEventBus,

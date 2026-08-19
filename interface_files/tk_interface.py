@@ -13,25 +13,23 @@ from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageTk
 from googleapiclient.discovery import build
 
-from . import tk_popups as custommenus
-
+#--------- imports internos -------
 from data_access.machine_id import get_machine_id
 from data_access.cloudsync import login_and_sync, call_merge    
 from data_access.datafiles import DATA_DIR, ICONS_CACHE_DIR, ICONS, CONFIG_FILE, TOKEN_PATH, db, notes_db
 
+from helpers.data_manager import DataManager
+from helpers.file_manager import FileManager
+from helpers.games_launcher import GameLauncherController
+from helpers.helpers import safe_askdirectory
 from helpers.icon_utils import load_icon
 from helpers.safe_threading import safe_thread
 
-from helpers.helpers import safe_askdirectory
-from helpers.file_manager import FileManager
-from helpers.games_launcher import GameLauncherController
-from helpers.data_manager import DataManager
+from .tk_menus_renderer import TkMenuRenderer
+from .tk_popups import ConfirmDialog, InputDialog, CustomPopupMenu, AutoCloseFrame
+from .ui_handler import get_menu_renderer
 
 from platform_adapters.platform_handler import PlatformHandler
-
-from .tk_popups import ConfirmDialog
-from .ui_handler import get_menu_renderer
-from .tk_menus_renderer import TkMenuRenderer
 
 
 class SplashFrame(tb.Frame):
@@ -353,7 +351,7 @@ class DraggableNotebook(tb.Notebook):
         _close_menu_popup(self)
         if not self.input:
             self.empty_frame.pack_forget()
-            self.input = custommenus.InputDialog(self, prompt="Nombre de la Plataforma:", callback=self.input_callback_handler)
+            self.input = InputDialog(self, prompt="Nombre de la Plataforma:", callback=self.input_callback_handler)
             self.input.pack()
 
     def input_callback_handler(self, value):
@@ -397,7 +395,7 @@ class DraggableNotebook(tb.Notebook):
 
     def confirm_remove(self):
         _close_menu_popup(self)
-        custommenus.ConfirmDialog(self, title="Eliminar plataforma", message= "Atencion, estas por elminar una plataforma", callback=self.remove_tab).place(relx=0.5, rely=0.5, anchor="center")
+        ConfirmDialog(self, title="Eliminar plataforma", message= "Atencion, estas por elminar una plataforma", callback=self.remove_tab).place(relx=0.5, rely=0.5, anchor="center")
              
     def remove_tab(self, confirmed):
         if self._active is not None:
@@ -428,7 +426,7 @@ class DraggableNotebook(tb.Notebook):
         db.set("global.tab_order", [self.tab(i, "text") for i in range(self.index("end"))])      
 
     def show_menu(self, platform_name, x_root, y_root):
-        self.menu_popup = custommenus.CustomPopupMenu(self)
+        self.menu_popup = CustomPopupMenu(self)
         
         if platform_name:  
             self.menu_popup.add_button("🗑 Eliminar plataforma", 25, "danger-outline", self.confirm_remove)
@@ -466,8 +464,7 @@ class GamePlatformFrame(ttk.Frame):
         self.file_manager = FileManager()
         self.img = Image.open(os.path.join(ICONS, f"no_icon.ico")).resize((16, 16), Image.LANCZOS)
         self.default_icon= ImageTk.PhotoImage(self.img)
-        self.gamelaunch = GameLauncherController()
-        self.gamelaunch.register_ui(self.platform_name, self)  
+        GameLauncherController().register_ui(self.platform_name, self)  
 
         db.ensure(f"{platform_name}.favorites", [])
         
@@ -591,7 +588,7 @@ class GamePlatformFrame(ttk.Frame):
             game_name = game_tree.item(item_id, "values")[0]
             game_path = db.get(f"{platform_name}.game_list.{game_name}")
             if game_path:
-                self.gamelaunch.launch_game(game_name)
+                GameLauncherController().launch_game(game_name)
             else:
                 messagebox.showwarning("Atención", "No se pudo encontrar el juego")
         else:
@@ -612,7 +609,7 @@ class GamePlatformFrame(ttk.Frame):
     
     def confirm_remove(self):
         _close_menu_popup(self)
-        custommenus.ConfirmDialog(self, title="Eliminar juego", message= "Atencion, estas por elminar un juego", callback=self.remove_exe).place(relx=0.5, rely=0.5, anchor="center")
+        ConfirmDialog(self, title="Eliminar juego", message= "Atencion, estas por elminar un juego", callback=self.remove_exe).place(relx=0.5, rely=0.5, anchor="center")
                
     def remove_exe(self, confirmed): # elimina el ejecutable DE LA LISTA
         if not confirmed:
@@ -725,7 +722,7 @@ class GamePlatformFrame(ttk.Frame):
                 save_steam_id(value)
 
         def ask_input():
-            input = custommenus.InputDialog(self, prompt="Ingrese Steam ID:", callback=input_callback_handler)
+            input = InputDialog(self, prompt="Ingrese Steam ID:", callback=input_callback_handler)
             _close_menu_popup(self)
         
             input.place(relx=0.5, rely=0, anchor="n")
@@ -734,7 +731,7 @@ class GamePlatformFrame(ttk.Frame):
 
     def show_menu(self, game_name, x_root , y_root, btn_props):
         platform_name = self.platform_name
-        menu = custommenus.CustomPopupMenu(self)
+        menu = CustomPopupMenu(self)
         self.menu_popup = menu
 
         options = PlatformHandler().get("menu-options").get_options(game_name, btn_props, self)
@@ -969,7 +966,7 @@ class NotesWindow(tb.Toplevel):
         texto = self.text_area.get("1.0", "end").strip()
         notes_db.set(self.game_name, texto)                   
 
-class PropertiesWindow(custommenus.AutoCloseFrame):
+class PropertiesWindow(AutoCloseFrame):
     def __init__(self, parent, platform_name, game_tree, on_update_callback=None, on_update_tab=None ):
         super().__init__(parent)
         self.platform_name = platform_name
@@ -1085,7 +1082,7 @@ class PropertiesWindow(custommenus.AutoCloseFrame):
         path_listbox = self.path_listbox
         index = path_listbox.nearest(event.y)  # Devuelve el índice más cercano al clic
         bbox = path_listbox.bbox(index)        # Da las coordenadas del ítem
-        self.menu = custommenus.CustomPopupMenu(self, on_close_callback= self.menu_closed)
+        self.menu = CustomPopupMenu(self, on_close_callback= self.menu_closed)
         
         if bbox:
             x, y, width, height = bbox
@@ -1151,7 +1148,7 @@ class PropertiesWindow(custommenus.AutoCloseFrame):
         if selected:
             if hasattr(self, "menu") and self.menu:
                 self.menu.destroy()
-            custommenus.ConfirmDialog(self, title="Eliminar directorio", message= "Atencion, estas por elminar un directorio", callback= self.remove_folder).place(relx=0.5, rely=0.5, anchor="center")
+            ConfirmDialog(self, title="Eliminar directorio", message= "Atencion, estas por elminar un directorio", callback= self.remove_folder).place(relx=0.5, rely=0.5, anchor="center")
         else: 
             self.warning_label_path.config(text="                                                              Nada que eliminar")
             self.warning_label_path.after(3000, lambda: self.warning_label_path.config(text=""))   
@@ -1171,7 +1168,7 @@ class PropertiesWindow(custommenus.AutoCloseFrame):
 
         def close_menu(self):
             for widget in self.winfo_children():
-                if isinstance(widget, custommenus.CustomPopupMenu) or isinstance(widget, custommenus.ConfirmDialog):
+                if isinstance(widget, CustomPopupMenu) or isinstance(widget, ConfirmDialog):
                     widget.destroy()
     
     def update_directory_list(self): # recible el path_list y lo "actualiza"
@@ -1209,7 +1206,7 @@ class PropertiesWindow(custommenus.AutoCloseFrame):
         self.warning_label.config(text="")
         self.on_update_tab(new_name, pre_name)
 
-class CloudSettingsWindow(custommenus.AutoCloseFrame):
+class CloudSettingsWindow(AutoCloseFrame):
     def __init__(self, parent, folder_id=None, on_close_callback=None, **kwargs):
         super().__init__(parent, on_close_callback=on_close_callback, **kwargs)
         self.on_close_callback = on_close_callback

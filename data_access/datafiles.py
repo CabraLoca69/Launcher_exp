@@ -1,3 +1,4 @@
+#--------- imports internos -------
 from .sqlitedb import SQLiteDatabase
 from base_path import get_portable_base_dir
 
@@ -47,4 +48,3 @@ db.ensure("global.email", None)
 db.ensure("global.allow_multiple_games", True)
 db.ensure("global.tab_order", [])
 db.ensure("global.last_selected_tab", None)
-

@@ -9,15 +9,16 @@ import glob
 from pathlib import Path
 from datetime import datetime
 
-from data_access.machine_id import get_machine_id
+#--------- imports internos -------
 from data_access.cloudsync import call_upload
 from data_access.datafiles import ICONS, ICONS_CACHE_DIR, db
+from data_access.machine_id import get_machine_id
 
-from helpers.safe_threading import safe_thread
-
-from platform_adapters.platform_handler import PlatformHandler
+from .safe_threading import safe_thread
 
 from interface_files.ui_handler import get_event_bus
+
+from platform_adapters.platform_handler import PlatformHandler
 
 class FileManager():
     def __init__(self):
@@ -147,7 +148,3 @@ class FileManager():
 
             except OSError as e:
                 print(f"No se pudo eliminar {icon_file}: {e}")
-            
-
-
-

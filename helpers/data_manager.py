@@ -1,8 +1,11 @@
 import os
+
+#--------- imports internos -------
 from data_access.datafiles import ICONS, db
-from helpers.safe_threading import safe_thread
-from helpers.file_manager import FileManager
-from platform_adapters.registry import CURRENT_OS, PLATFORM_METHODS
+
+from .file_manager import FileManager
+from .safe_threading import safe_thread
+
 from platform_adapters.platform_handler import PlatformHandler
 
 _favorites_limit= 6

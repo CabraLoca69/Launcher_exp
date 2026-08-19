@@ -29,15 +29,29 @@ class SQLiteDatabase:
         if isinstance(keypath, list):
             return ".".join(keypath)
         return keypath
-
-    # ---------------- PUBLIC API ----------------
-    def get(self, keypath: Union[str, List[str]], default=None):
-        key = self._resolve_path(keypath)
-
+    
+    def _fetch_row(self, query, params):    
         with self.lock:
             cur = self.conn.cursor()
-            cur.execute("SELECT value FROM config WHERE key=?", (key,))
-            row = cur.fetchone()
+            cur.execute(query, params)
+            return cur.fetchone()
+
+    # ---------------- PUBLIC API ----------------
+    def resolve_game(self, game_name):
+        search = f"%.game_list.{game_name}"
+        row = self._fetch_row("SELECT key, value FROM config WHERE key LIKE ?", (search,))
+        
+        if not row:
+            raise ValueError(f"Juego '{game_name}' no encontrado")
+        
+        key, value_json = row
+
+        return key.split(".")[0], json.loads(value_json)
+
+    def get(self, keypath: Union[str, List[str]], default=None):
+        key = self._resolve_path(keypath)
+        
+        row = self._fetch_row("SELECT value FROM config WHERE key=?", (key,))
 
         if row is None:
             return default
@@ -156,6 +170,3 @@ class SQLiteDatabase:
                 children[subkey] = None
 
         return children
-    
-
-

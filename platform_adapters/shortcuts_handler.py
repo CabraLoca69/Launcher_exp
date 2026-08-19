@@ -3,11 +3,12 @@ import sys
 import shutil
 from pathlib import Path
 
-from helpers.icon_utils import load_icon
-from data_access.datafiles import ICONS_CACHE_DIR, ICONS, db
-
 if sys.platform.startswith("win"):
     import win32com.client
+
+#--------- imports internos -------
+from data_access.datafiles import ICONS_CACHE_DIR, ICONS, db
+from helpers.icon_utils import load_icon
 
 
 class ShortcutCreator:

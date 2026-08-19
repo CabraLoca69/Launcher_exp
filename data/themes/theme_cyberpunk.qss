@@ -281,6 +281,39 @@ QLabel#sessionDuration {
     font-weight: bold;
 }
 
+/* ── SessionsBar (sesiones en vivo) ──────────────────────────── */
+QFrame#sessionBarFrame {
+    background-color: #10101a;
+    border: 1px solid #00e5ff20;
+    border-radius: 4px;
+}
+
+QLabel#sessionBarName {
+    color: #c8d0e0;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+QLabel#sessionBarTime {
+    color: #00e5ff;
+    font-size: 12px;
+}
+
+QPushButton#btnCloseSession {
+    background-color: #ff2d7818;
+    color: #ff2d78;
+    border: 1px solid #ff2d7850;
+    border-radius: 4px;
+    padding: 4px;
+    font-size: 12px;
+}
+
+QPushButton#btnCloseSession:hover {
+    background-color: #ff2d7830;
+    border-color: #ff2d78;
+    color: #fff;
+}
+
 /* ── Panel favoritos ─────────────────────────────────────────── */
 QWidget#favoritesPanel {
     background-color: #0d0d12;

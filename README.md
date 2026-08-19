@@ -54,7 +54,7 @@ El launcher sincroniza los datos en la nube para no perderlos:
 - Todo se guarda en un **JSON dentro de una carpeta en Google Drive**.
 - Se usa un **ID por máquina** para diferenciar el origen de los datos, así nunca se pisa información entre dispositivos.
 
-> ⚠️ Actualmente **solo yo puedo usar esta función**: el programa no está publicado, así que hay que habilitar el acceso a la API desde mi propia cuenta de Google.
+> ⚠️ Actualmente **solo yo puedo usar esta función**: el programa no está publicado, así que hay que habilitar el acceso a la API desde mi propia cuenta de Google. Si activás el cloud sync sin tener las credenciales de Google configuradas, el launcher no se rompe — tira un error al intentar sincronizar y sigue funcionando normalmente, simplemente sin guardar nada en la nube.
 
 ## Instalación / Ejecución
 

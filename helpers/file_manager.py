@@ -12,7 +12,6 @@ from datetime import datetime
 #--------- imports internos -------
 from data_access.cloudsync import call_upload
 from data_access.datafiles import ICONS, ICONS_CACHE_DIR, db
-from data_access.keys import game_name_from_path
 from data_access.machine_id import get_machine_id
 
 from .safe_threading import safe_thread
@@ -41,7 +40,7 @@ class FileManager():
         return folder
 
     def add_game(self, platform_name: str, exe_path: str) -> tuple[bool, str]:
-        exe_name = game_name_from_path(exe_path)
+        exe_name = PlatformHandler().get("exedetect").game_name(exe_path)
         key = f"{platform_name}.game_list.{exe_name}"
 
         if db.get(key) is not None:
@@ -107,6 +106,7 @@ class FileManager():
         ]
 
         folders = db.get(f"{platform_name}.platform_folders", [])
+        detector = PlatformHandler().get("exedetect")
 
         for path in folders:
             if not os.path.isdir(path):
@@ -116,13 +116,13 @@ class FileManager():
                 for file in files:
                     full_path = os.path.join(root, file)
 
-                    if not PlatformHandler().get("exedetect").is_executable(full_path):
+                    if not detector.is_executable(full_path):
                         continue
 
                     if any(k in file.lower() for k in ignore_keywords):
                         continue
 
-                    key = game_name_from_path(file)
+                    key = detector.game_name(file)
                     db.set(f"{platform_name}.game_list.{key}", full_path)
         
     def sort_key(self, game_name, game_times):

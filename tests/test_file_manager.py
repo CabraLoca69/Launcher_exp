@@ -80,6 +80,7 @@ def test_scan_for_games_finds_executables_and_skips_ignored(fm, clean_db, tmp_pa
     for name, executable in [
         ("game", True),
         ("Game.v2.x86_64", True),
+        ("tool.v3", True),
         ("setup_x", True),
         ("notes.txt", False),
     ]:
@@ -95,6 +96,7 @@ def test_scan_for_games_finds_executables_and_skips_ignored(fm, clean_db, tmp_pa
     assert clean_db.get_children("lin.game_list") == {
         "game": str(tmp_path / "sub" / "game"),
         "Game_v2": str(tmp_path / "sub" / "Game.v2.x86_64"),
+        "tool_v3": str(tmp_path / "sub" / "tool.v3"),
     }
 
 

@@ -21,6 +21,11 @@ QMainWindow, QWidget {
     color: @text;
 }
 
+/* Los textos toman el fondo de donde están (header, barra del juego, filas) */
+QLabel, QCheckBox {
+    background-color: transparent;
+}
+
 /* ── Header ──────────────────────────────────────────────────── */
 QWidget#header {
     background-color: @surface;

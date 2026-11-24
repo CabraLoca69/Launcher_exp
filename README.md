@@ -49,7 +49,7 @@ Con click derecho sobre la pestaña de la plataforma:
 - **Recargar**: reescanea sus directorios
 - **Eliminar plataforma**
 
-En **⚙ Configuración** están la sincronización en la nube y la opción de permitir varios juegos abiertos a la vez.
+En **⚙ Configuración** están la sincronización en la nube, la opción de permitir varios juegos abiertos a la vez y el **tema** de la interfaz (Cyberpunk, Oscuro, Claro, Nord, Dracula). Para crear un tema, copiá un `.json` de `data/themes/` y cambiá los colores (`#RRGGBB`).
 
 Quitar un programa o una plataforma **no borra las horas jugadas**: dejan de mostrarse, y si volvés a agregarlos (o reescaneás) reaparecen con su historial.
 
@@ -74,7 +74,7 @@ _internals
     /icons
         iconos.ico/.png
     /themes
-        algun_tema.qss
+        base.qss + un .json por tema
 
 de otra forma no va a abrirse nada o se abrira roto.
 

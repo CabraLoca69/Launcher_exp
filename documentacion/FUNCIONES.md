@@ -178,8 +178,9 @@ Patrón repetido en casi todos estos archivos: una clase base/interfaz + una imp
 - **`FavoritesPanel`**: `refresh(self)`, `_build_row(self, game_name, path)`, `_launch(self, game_name)`.
 - **`GameDetailPanel`**: `show_game(self, game_name, icon)`, `_refresh_if_running(self)` (timer: refresca horas y sesiones mientras el juego corre), `_populate_sessions(self, sessions)`, `_build_session_row(self, index, session)`, `_launch_game(self)`, `_open_notes(self)`, `_toggle_favorites(self)`, `_show_props_menu(self)`.
 - **`ClearableTreeWidget`** — árbol que se deselecciona al hacer click en vacío.
-- **`PlatformTab`**: `_build_sidebar`, `_on_game_clicked/_on_game_double_clicked/_on_game_right_click`, `show_game_menu`, `update_on_close` (reordena la lista y refresca favoritos), `refresh_games`, `_launch_selected` (Enter), `_confirm_remove_selected` (Supr), `toggle_favorite`, `fill_games`, `_add_game_item`, `_delete_selected_item`, `_filter_games`, `_find_item_by_name`, `launch_game`, `confirm_remove` + `_on_confirm`, `add_exe`, `change_game_directory`, `ask_steam_id`, `_game_path`, `gotofolder`, `create_direct_access`, `create_start_menu_shortcut`.
-- **`SettingsWindow`** (Configuración: cloud + "varios juegos a la vez"): `_build_ui`, `_toggle_clouding`, `_change_account`, `_confirm`, `_recall_token` (+ `worker()` interna), `_on_login_finished`, `_get_account_info`.
+- **`PlatformTab`**: `_build_sidebar`, `_on_game_clicked/_on_game_double_clicked/_on_game_right_click`, `show_game_menu`, `update_on_close` (reordena la lista y refresca favoritos), `refresh_games`, `_show_panel` (favoritos/detalle con fundido), `_launch_selected` (Enter), `_confirm_remove_selected` (Supr), `toggle_favorite`, `fill_games`, `_add_game_item`, `_delete_selected_item`, `_filter_games`, `_find_item_by_name`, `launch_game`, `confirm_remove` + `_on_confirm`, `add_exe`, `change_game_directory`, `ask_steam_id`, `_game_path`, `gotofolder`, `create_direct_access`, `create_start_menu_shortcut`.
+- `fade_in(widget)` — fundido al mostrar un panel (`FADE_MS`). `apply_theme(theme_id)` — aplica un tema a toda la app.
+- **`SettingsWindow`** (Configuración: cloud, "varios juegos a la vez" y tema; se cierra con click afuera): `_change_theme`, `_build_ui`, `_toggle_clouding`, `_change_account`, `_confirm`, `_recall_token` (+ `worker()` interna), `_on_login_finished`, `_get_account_info`.
 - **`MainWindow`**: `_start_reload`, `_on_reload_finished` (restaura la última pestaña), `_remember_tab`, `_refresh_all_tabs` (tras el merge de la nube al abrir), `_add_platform_tab`, `_build_header`, `update_title_label`, `add_platform`, `_open_settings`, `_on_tab_close_requested`, `_remove_tab`, `_on_tab_context_menu`, `_save_tab_order`, `_replace_tab`, `_open_properties`, `_reload_tab`.
 - **`PlatformPropertiesDialog`**: directorios (`_add_folder`, `_remove_folder`, `_open_folder`) y `_rename`; `changed` indica si hay que reconstruir la pestaña.
 - `_exe_filter()` — filtro del diálogo de ejecutables (en Linux, "Todos los archivos" primero).
@@ -191,6 +192,8 @@ Patrón repetido en casi todos estos archivos: una clase base/interfaz + una imp
 
 **`qt_menus_renderer.py`** — `QtMenuRenderer.build(self, menu, options)`: arma el menú a partir de opciones genéricas.
 
-**`qt_popups.py`** — `BasePopup` (cierre con Escape / click afuera, `_respond`), `CustomPopupMenu` (`add_button`, `show_at`), `InputDialog` (`_respond_input`), `ConfirmDialog`.
+**`themes.py`** — `list_themes(themes_dir)` (temas válidos), `load_theme(path)` (valida colores `#RRGGBB`), `render(template, colors)` (`@color` y `@color/NN`), `stylesheet(theme_id)` (con fallback a `DEFAULT_THEME`).
+
+**`qt_popups.py`** — `CloseOnClickOutside` (mixin: diálogo que se cierra con click afuera, salvo que haya otro modal o menú encima), `BasePopup` (cierre con Escape / click afuera, `_respond`), `CustomPopupMenu` (`add_button`, `show_at`), `InputDialog` (`_respond_input`), `ConfirmDialog`.
 
 ---

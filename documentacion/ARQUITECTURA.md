@@ -38,7 +38,7 @@ Carpeta de contenido, no de código. Guarda todo lo que el programa lee/escribe 
 | `databases/` | Bases de datos SQLite usadas por el programa |
 | `icons/` | Iconos propios del launcher (UI) |
 | `icons_cache/` | Iconos de ejecutables ya extraídos/cacheados (para no reprocesar) |
-| `themes/` | Temas de la interfaz qt |
+| `themes/` | Temas: plantilla `base.qss` + una paleta `.json` por tema |
 
 ---
 
@@ -72,6 +72,7 @@ Todo lo visual, en Qt/PySide6. La UI Tk se eliminó (la última versión que la 
 - **`ui_handler.py`** — genera el `event_bus` (Qt, o uno vacío para `--launch`). Es el punto de entrada de esta capa.
 - **`event_bus.py`** — avisa a la UI cuando un juego arranca o termina.
 - **`qt_interface.py`**, **`qt_menus_renderer.py`**, **`qt_popups.py`** — la interfaz, sus menús y sus diálogos.
+- **`themes.py`** — lee las paletas de `data/themes/` y arma la hoja de estilos desde `base.qss`.
 
 ---
 

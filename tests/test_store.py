@@ -378,3 +378,19 @@ def test_export_roundtrip(st, tmp_path):
     other.import_sessions(st.export_sessions())
     other.import_sessions(st.export_sessions())
     assert other.total_seconds("p", "a") == 60
+
+
+def test_opening_db_from_older_schema_adds_missing_columns(tmp_path):
+    """DB creada antes de que `sessions` tuviera `covers`: se actualiza al abrirla."""
+    path = tmp_path / "vieja.db"
+    old = Store(path)
+    old.add_game("p", "a", "/a")
+    with old.conn:
+        old.conn.execute("ALTER TABLE sessions DROP COLUMN covers")
+    old.conn.close()
+
+    st = Store(path)
+    sid = st.start_session(st.get_game("p", "a").id, "pc1", pid=None)
+    st.end_session(sid, 60)
+    assert st.total_seconds("p", "a") == 60
+    assert st.recent_sessions("p", "a")[0].covers == []

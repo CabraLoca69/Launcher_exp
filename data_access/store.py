@@ -71,6 +71,11 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 """
 
+# Columnas agregadas después de crear el esquema. `CREATE TABLE IF NOT EXISTS` no
+# toca tablas existentes: al abrir una DB vieja se agregan las que falten.
+# Al sumar una columna a SCHEMA, agregarla también acá.
+_ADDED_COLUMNS = (("sessions", "covers", "TEXT NOT NULL DEFAULT '[]'"),)
+
 _ID_NAMESPACE = uuid.UUID("6f1c2a4e-9b7d-4c1e-8a35-3d2f0b9e7c11")
 _COUNTED = "s.kind <> 'history'"  # filas que suman horas
 _SESSION_FIELDS = (
@@ -183,6 +188,16 @@ class Store:
             self.conn.execute("PRAGMA journal_mode=WAL")
             self.conn.execute("PRAGMA foreign_keys=ON")
             self.conn.executescript(SCHEMA)
+            self._add_missing_columns()
+
+    def _add_missing_columns(self) -> None:
+        for table, column, definition in _ADDED_COLUMNS:
+            existing = {r[1] for r in self.conn.execute(f"PRAGMA table_info({table})")}
+            if column not in existing:
+                self.conn.execute(
+                    f"ALTER TABLE {table} ADD COLUMN {column} {definition}"
+                )
+        self.conn.commit()
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:

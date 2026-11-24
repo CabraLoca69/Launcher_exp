@@ -67,16 +67,24 @@ El launcher sincroniza los datos en la nube para no perderlos:
 Por el momento la forma de instalar y ejecutar es clonar el repo y ejecutar launcher69.py directamente, la interfaz puede tener errores.
 De todas formas deberias tomarte el trabajo de instalar las ['dependencias'](./requirements.txt) necesarias para que esto funcione.
 
-Se puede empaquetar el script ejecutando build.py, el solo decide si .exe o binario segun so. Deberias mantener la arquitectura:
-launcher69
-_internals
-/data
-    /icons
-        iconos.ico/.png
-    /themes
-        base.qss + un .json por tema
+Se puede empaquetar ejecutando `build.py` (decide solo si genera `.exe` o binario según el SO). El resultado queda en `dist/Launcher69/`, ya con la estructura que necesita:
 
-de otra forma no va a abrirse nada o se abrira roto.
+```
+Launcher69(.exe)
+_internal/
+data/
+    icons/      íconos del launcher
+    themes/     base.qss + un .json por tema
+```
+
+En Linux, `build.py` usa `data/icons/icon.png`, que la app genera la primera vez que corre desde el código.
+
+### Actualizar una instalación existente
+1. Cerrá el launcher.
+2. Reemplazá `Launcher69(.exe)`, `_internal/`, `data/icons/` y `data/themes/` por los de `dist/Launcher69/`.
+3. **No borres** `data/databases/` ni `data/cloud_files/`: ahí están tus horas, tu cuenta y el id de la PC.
+
+Al abrirla, la DB vieja (`config.db` + `notas.db`) se migra sola a `launcher.db`. Los archivos viejos quedan como respaldo. Los temas viejos (`theme_*.qss`) se pueden borrar.
 
 ---
 

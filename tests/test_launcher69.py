@@ -36,3 +36,9 @@ def test_main_launch_passes_platform(monkeypatch):
     monkeypatch.setattr(launcher69, "GameLauncherController", FakeController)
     launcher69.main(["--launch", "Hollow", "--platform", "gog"])
     assert calls == [("Hollow", "gog")]
+
+
+def test_main_launch_unknown_game_exits_cleanly(store):
+    with pytest.raises(SystemExit) as exc:
+        launcher69.main(["--launch", "no-existe"])
+    assert exc.value.code == 1

@@ -1,5 +1,6 @@
 import argparse
 import logging
+import sys
 
 from data_access.datafiles import store
 from data_access.machine_id import get_machine_id
@@ -31,7 +32,11 @@ def main(argv: list[str] | None = None) -> None:
     except Exception:  # un resumen fallido no debe impedir jugar
         logging.getLogger(__name__).exception("No se pudo resumir los meses cerrados")
     if args.launch:
-        GameLauncherController().launch_game(args.launch, args.platform)
+        try:
+            GameLauncherController().launch_game(args.launch, args.platform)
+        except ValueError:  # ej. acceso directo a un juego que ya no está
+            logging.getLogger(__name__).exception("No se pudo lanzar '%s'", args.launch)
+            sys.exit(1)
     else:
         start_qt_ui()
 

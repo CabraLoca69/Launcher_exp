@@ -6,16 +6,25 @@ import shutil
 # Configuración
 SCRIPT_NAME = "launcher69.py"
 EXE_NAME = "Launcher69"
+DIST_DIR = os.path.join("dist", EXE_NAME)
 
 def run(cmd):
     print(">>>", " ".join(cmd))
     subprocess.check_call(cmd)
 
+def copy_app_data():
+    """Íconos y temas van al lado del ejecutable: la app los lee de data/ junto a él.
+    Los datos del usuario (databases/, cloud_files/) no se tocan."""
+    for folder in ("icons", "themes"):
+        target = os.path.join(DIST_DIR, "data", folder)
+        shutil.copytree(os.path.join("data", folder), target, dirs_exist_ok=True)
+
+
 def clean():
     if os.path.exists("build"):
         shutil.rmtree("build")
-    if os.path.exists("launcher69.spec"):
-        os.remove("launcher69.spec")
+    if os.path.exists(f"{EXE_NAME}.spec"):
+        os.remove(f"{EXE_NAME}.spec")
 
 def main():
     system = platform.system()
@@ -37,15 +46,18 @@ def main():
         "pyinstaller",
         "--onedir",
         "--noconsole",
+        "--noconfirm",
+        f"--name={EXE_NAME}",
         f"--icon={ICON_PATH}",
         "--add-data", ADD_DATA,
 
         SCRIPT_NAME
     ])
 
+    copy_app_data()
     clean()
 
-    print(f"\n✅ Proceso terminado. El ejecutable está en dist/{output_name}")
+    print(f"\n✅ Proceso terminado. El ejecutable está en {DIST_DIR}/{output_name}")
 
 if __name__ == "__main__":
     main()

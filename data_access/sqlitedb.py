@@ -38,8 +38,13 @@ class SQLiteDatabase:
 
     # ---------------- PUBLIC API ----------------
     def resolve_game(self, game_name):
-        search = f"%.game_list.{game_name}"
-        row = self._fetch_row("SELECT key, value FROM config WHERE key LIKE ?", (search,))
+        # Comparación literal del final de la clave: con LIKE, '_' y '%' del nombre
+        # serían comodines y podrían devolver otro juego.
+        suffix = f".game_list.{game_name}"
+        row = self._fetch_row(
+            "SELECT key, value FROM config WHERE substr(key, -?) = ?",
+            (len(suffix), suffix),
+        )
         
         if not row:
             raise ValueError(f"Juego '{game_name}' no encontrado")

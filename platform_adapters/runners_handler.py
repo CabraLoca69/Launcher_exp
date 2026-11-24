@@ -5,6 +5,7 @@ import time
 
 #--------- imports internos -------
 from data_access.datafiles import db
+from data_access.keys import game_name_from_path
 
 INVALID_NAMES = {
     "reaper", "wineserver", "steam", "steamwebhelper",
@@ -28,7 +29,7 @@ class LinuxWineRunner(GameRunner):
         self.wineprefix = wineprefix or os.path.expanduser("~/.wine")
 
     def run(self, game_path):
-        game_name = os.path.splitext(os.path.basename(game_path))[0] #este le quita el .exe
+        game_name = game_name_from_path(game_path)
         steam_appid = db.get(f"global.steam_ids.{game_name}")
         game_exe = os.path.basename(game_path) #este devuelve con el .exe
 

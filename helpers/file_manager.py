@@ -12,6 +12,7 @@ from datetime import datetime
 #--------- imports internos -------
 from data_access.cloudsync import call_upload
 from data_access.datafiles import ICONS, ICONS_CACHE_DIR, db
+from data_access.keys import game_name_from_path
 from data_access.machine_id import get_machine_id
 
 from .safe_threading import safe_thread
@@ -40,7 +41,7 @@ class FileManager():
         return folder
 
     def add_game(self, platform_name: str, exe_path: str) -> tuple[bool, str]:
-        exe_name = os.path.splitext(os.path.basename(exe_path))[0]
+        exe_name = game_name_from_path(exe_path)
         key = f"{platform_name}.game_list.{exe_name}"
 
         if db.get(key) is not None:
@@ -83,7 +84,7 @@ class FileManager():
 
         return removed_games
     
-    def rename_platform(old_name: str, new_name: str) -> bool:
+    def rename_platform(self, old_name: str, new_name: str) -> bool:
         with db.lock:
             tab_order = db.get("global.tab_order", default=[])
             if old_name not in tab_order:
@@ -121,7 +122,7 @@ class FileManager():
                     if any(k in file.lower() for k in ignore_keywords):
                         continue
 
-                    key = os.path.splitext(file)[0]
+                    key = game_name_from_path(file)
                     db.set(f"{platform_name}.game_list.{key}", full_path)
         
     def sort_key(self, game_name, game_times):

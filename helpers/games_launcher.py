@@ -43,8 +43,8 @@ class GameLauncherController:
     def launch_game(self, game_name):
         def execute():
             with self.lock:
-                allow_multiple = db.get("global.allow_multiple_games") or False
-                if not allow_multiple:
+                allow_multiple = db.get("global.allow_multiple_games", False)
+                if not allow_multiple and db.get_children("global.actual_running"):
                     logging.info("Ya hay un juego en ejecución, no se puede iniciar otro.")
                     return
 

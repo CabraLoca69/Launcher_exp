@@ -597,7 +597,7 @@ class PlatformTab(QWidget):
             QMessageBox.warning(self, "Juego duplicado.", result)
             return
 
-        game_name = Path(exe_path).stem
+        game_name = result
         icon = PlatformHandler().get("icons").get_icon(exe_path)
         game_data = {'icon': icon, 'name': game_name, 'path': exe_path}
 

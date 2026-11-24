@@ -1,3 +1,4 @@
+import logging
 import time
 from PySide6.QtCore import QObject, Signal
 

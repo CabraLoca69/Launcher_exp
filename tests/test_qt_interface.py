@@ -187,3 +187,65 @@ def test_notes_are_saved_on_close(store, bus, no_icons, monkeypatch):
     monkeypatch.setattr(qt_interface.NotesDialog, "exec", fake_exec)
     tab.detail_panel._open_notes()
     assert store.get_game("steam", "a").notes == "pasar el jefe"
+
+
+def test_settings_window_changes_theme(store, bus, app):
+    win = qt_interface.SettingsWindow(None)
+    ids = [win.theme_combo.itemData(i) for i in range(win.theme_combo.count())]
+    assert {"cyberpunk", "claro", "nord"} <= set(ids)
+
+    win.theme_combo.setCurrentIndex(ids.index("claro"))
+    assert store.get_setting("theme") == "claro"
+    assert "#f5f6f8" in app.styleSheet()  # fondo del tema claro
+
+
+def _press_at(dialog, global_point):
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+
+    local = QPointF(0, 0)
+    event = QMouseEvent(
+        QEvent.Type.MouseButtonPress,
+        local,
+        QPointF(global_point),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    dialog.eventFilter(dialog, event)
+
+
+def test_settings_window_closes_on_click_outside(store, bus, app):
+    from PySide6.QtCore import QPoint
+
+    win = qt_interface.SettingsWindow(None)
+    win.show()
+    app.processEvents()
+    _press_at(win, win.frameGeometry().center())  # adentro: sigue abierta
+    assert win.isVisible()
+    _press_at(win, win.frameGeometry().bottomRight() + QPoint(50, 50))
+    assert not win.isVisible()
+
+
+def test_tabs_have_no_close_button(store, bus):
+    assert qt_interface.MainWindow().tab_widget.tabsClosable() is False
+
+
+def test_game_list_is_flat_so_selection_is_a_side_line(store, bus, no_icons):
+    tab = _tab(store)
+    assert tab.games_tree.indentation() == 0
+    assert tab.games_tree.rootIsDecorated() is False
+
+
+def test_switching_games_fades_in_and_cleans_up(store, bus, no_icons, app):
+    from PySide6.QtTest import QTest
+
+    tab = _tab(store)
+    tab._on_game_clicked(tab._find_item_by_name("a"), 0)
+    assert tab.detail_panel.graphicsEffect() is not None  # fundido en curso
+
+    QTest.qWait(qt_interface.FADE_MS + 150)
+    assert tab.detail_panel.graphicsEffect() is None
+
+    tab._on_game_clicked(tab._find_item_by_name("a"), 0)  # mismo juego: sin animación
+    assert tab.detail_panel.graphicsEffect() is None

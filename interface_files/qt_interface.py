@@ -3,10 +3,14 @@ from PySide6.QtWidgets import (
     QLineEdit, QTabWidget, QLabel, QPushButton, QScrollArea,
     QFileDialog, QTreeWidget, QTreeWidgetItem,
     QInputDialog, QApplication, QFrame, QSizePolicy, QDialog,
-    QCheckBox, QMessageBox, QPlainTextEdit, QDialogButtonBox, QListWidget
+    QCheckBox, QMessageBox, QPlainTextEdit, QDialogButtonBox, QListWidget,
+    QComboBox, QGraphicsOpacityEffect
 )
 
-from PySide6.QtCore import Qt, QSize, QObject, QThread, Signal, QTimer, QPoint
+from PySide6.QtCore import (
+    Qt, QSize, QObject, QThread, Signal, QTimer, QPoint,
+    QPropertyAnimation, QEasingCurve, QAbstractAnimation,
+)
 
 from PySide6.QtGui import QShortcut, QKeySequence, QIcon
 
@@ -17,7 +21,7 @@ from datetime import datetime
 
 #--------- imports internos -------
 from data_access.cloudsync import call_merge, login_and_sync
-from data_access.datafiles import ICONS, THEMES_DIR, store
+from data_access.datafiles import ICONS, store
 from data_access.store import Session
 
 from helpers.data_manager import DataManager
@@ -27,13 +31,41 @@ from helpers.qicon_utils import load_qicon
 from helpers.safe_threading import safe_thread
 
 from .qt_menus_renderer import QtMenuRenderer
-from .qt_popups import InputDialog, ConfirmDialog, CustomPopupMenu
+from .qt_popups import InputDialog, ConfirmDialog, CustomPopupMenu, CloseOnClickOutside
+from .themes import DEFAULT_THEME, list_themes, stylesheet
 from .ui_handler import get_event_bus
 
 from platform_adapters.platform_handler import PlatformHandler
 
 LIVE_REFRESH_MS = 5000  # refresco del detalle de un juego que está corriendo
 EXTERNAL_POLL_MS = 3000  # búsqueda de juegos lanzados desde accesos directos
+FADE_MS = 180  # fundido al cambiar de juego en el panel derecho
+
+
+def fade_in(widget: QWidget) -> None:
+    """Muestra el widget con un fundido desde transparente."""
+    effect = QGraphicsOpacityEffect(widget)
+    widget.setGraphicsEffect(effect)
+    anim = QPropertyAnimation(effect, b"opacity", widget)
+    anim.setDuration(FADE_MS)
+    anim.setStartValue(0.0)
+    anim.setEndValue(1.0)
+    anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+    def done():
+        # Sin efecto, el widget se dibuja normal (el efecto cuesta en cada repintado).
+        # Si arrancó otro fundido mientras tanto, no se lo pisa.
+        if widget.graphicsEffect() is effect:
+            widget.setGraphicsEffect(None)
+
+    anim.finished.connect(done)
+    anim.start(QAbstractAnimation.DeletionPolicy.DeleteWhenStopped)
+
+
+def apply_theme(theme_id: str) -> None:
+    app = QApplication.instance()
+    if isinstance(app, QApplication):
+        app.setStyleSheet(stylesheet(theme_id))
 
 
 # label de sesiones, abajo en el mainwindow
@@ -407,6 +439,9 @@ class ClearableTreeWidget(QTreeWidget):
             self.cleared.emit()
         super().mousePressEvent(event)
 
+FAVORITES_PAGE, DETAIL_PAGE = 0, 1
+
+
 # Tab de una plataforma: sidebar + panel derecho con QStackedWidget
 class PlatformTab(QWidget):
     def __init__(self, platform_name: str, parent=None):
@@ -422,12 +457,11 @@ class PlatformTab(QWidget):
         sidebar = self._build_sidebar()
         sidebar.setFixedWidth(260)
  
-        # Stack: 0 = favoritos, 1 = detalle de juego
         self.right_stack = QStackedWidget()
         self.detail_panel = GameDetailPanel(platform_name, self)
         self.favorites_panel = FavoritesPanel(platform_name)
-        self.right_stack.addWidget(self.favorites_panel)  # 0
-        self.right_stack.addWidget(self.detail_panel)      # 1
+        self.right_stack.addWidget(self.favorites_panel)  # FAVORITES_PAGE
+        self.right_stack.addWidget(self.detail_panel)      # DETAIL_PAGE
  
         layout.addWidget(sidebar)
         layout.addWidget(self.right_stack)
@@ -462,18 +496,27 @@ class PlatformTab(QWidget):
         layout.addWidget(self.search_bar)
  
         self.games_tree = ClearableTreeWidget() 
-        self.games_tree.cleared.connect(lambda: self.right_stack.setCurrentIndex(0))
+        self.games_tree.cleared.connect(lambda: self._show_panel(FAVORITES_PAGE))
         self.games_tree.setHeaderLabels(["Juegos"])
         self.games_tree.setColumnCount(1)
-        self.games_tree.setIndentation(16)
+        self.games_tree.setIndentation(0)
+        self.games_tree.setRootIsDecorated(False)
         self.games_tree.setIconSize(QSize(20, 20))
         layout.addWidget(self.games_tree)
  
         return sidebar
     
     def _on_game_clicked(self, item: QTreeWidgetItem, _col: int):
-        self.detail_panel.show_game(item.text(0), item.icon(0))
-        self.right_stack.setCurrentIndex(1)
+        name = item.text(0)
+        changed = name != self.detail_panel.current_game
+        self.detail_panel.show_game(name, item.icon(0))
+        if changed or self.right_stack.currentIndex() != DETAIL_PAGE:
+            self._show_panel(DETAIL_PAGE)
+
+    def _show_panel(self, page: int):
+        """Cambia el panel derecho (favoritos / detalle) con un fundido."""
+        self.right_stack.setCurrentIndex(page)
+        fade_in(self.right_stack.currentWidget())
 
     def _on_game_double_clicked(self, item:QTreeWidgetItem, _col: int):
         self.launch_game(item.text(0))
@@ -563,7 +606,7 @@ class PlatformTab(QWidget):
             self.file_manager.delete_game(platform_name, game_name)
             self.favorites_panel.refresh()
         
-        self.right_stack.setCurrentIndex(0)
+        self._show_panel(FAVORITES_PAGE)
 
         QTimer.singleShot(0, self.games_tree.clearSelection)
         QTimer.singleShot(0, lambda: self.games_tree.setCurrentItem(None))
@@ -656,7 +699,7 @@ class PlatformTab(QWidget):
             self.platform_name, game_name, self._game_path(game_name))
 
 
-class SettingsWindow(QDialog):
+class SettingsWindow(CloseOnClickOutside, QDialog):
     login_finished = Signal(bool)  # ok, email
 
     def __init__(self, parent, on_close_callback=None):
@@ -693,6 +736,23 @@ class SettingsWindow(QDialog):
         self.chk_multiple.toggled.connect(
             lambda checked: store.set_setting("allow_multiple_games", checked))
         layout.addWidget(self.chk_multiple)
+
+        theme_row = QHBoxLayout()
+        theme_row.addWidget(QLabel("Tema:"))
+        self.theme_combo = QComboBox()
+        current = store.get_setting("theme", DEFAULT_THEME)
+        for theme in list_themes():
+            self.theme_combo.addItem(theme.name, theme.id)
+            if theme.id == current:
+                self.theme_combo.setCurrentIndex(self.theme_combo.count() - 1)
+        self.theme_combo.currentIndexChanged.connect(self._change_theme)
+        theme_row.addWidget(self.theme_combo, stretch=1)
+        layout.addLayout(theme_row)
+
+    def _change_theme(self, _index: int):
+        theme_id = self.theme_combo.currentData()
+        store.set_setting("theme", theme_id)
+        apply_theme(theme_id)
 
     # ------------------------------------------------------------------
     def _toggle_clouding(self, checked):
@@ -762,9 +822,7 @@ class MainWindow(QMainWindow):
         root_layout.addWidget(self._build_header())
  
         self.tab_widget = QTabWidget()
-        self.tab_widget.setTabsClosable(True)
         self.tab_widget.setMovable(True)
-        self.tab_widget.tabCloseRequested.connect(self._on_tab_close_requested)
         self.tab_widget.tabBar().tabMoved.connect(lambda *_: self._save_tab_order())
         # --- click derecho sobre las pestañas ---
         self.tab_widget.tabBar().setContextMenuPolicy(Qt.CustomContextMenu)
@@ -772,7 +830,7 @@ class MainWindow(QMainWindow):
 
         self.empty_label = QLabel("Agregá una plataforma para empezar →")
         self.empty_label.setAlignment(Qt.AlignCenter)
-        self.empty_label.setStyleSheet("font-size: 18px; color: #666;")
+        self.empty_label.setObjectName("emptyState")
  
         root_layout.addWidget(self.empty_label)
         root_layout.addWidget(self.tab_widget)
@@ -965,7 +1023,7 @@ def _exe_filter() -> str:
     return f"{exes};;{every}" if sys.platform.startswith("win") else f"{every};;{exes}"
 
 
-class PlatformPropertiesDialog(QDialog):
+class PlatformPropertiesDialog(CloseOnClickOutside, QDialog):
     """Directorios de la plataforma (agregar, quitar, abrir) y renombrarla."""
 
     def __init__(self, parent, platform_name: str):
@@ -1121,9 +1179,7 @@ class QtLauncherUI:
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Launcher69.App")
         app = QApplication(sys.argv)
         app.setWindowIcon(load_qicon(Path(ICONS) / "icon.ico", size=None))
-        themes_path = Path(THEMES_DIR) / "theme_cyberpunk.qss"
-        with open(themes_path, "r") as f:
-            app.setStyleSheet(f.read())
+        apply_theme(store.get_setting("theme", DEFAULT_THEME))
         w = MainWindow()
         w.show()
         sys.exit(app.exec())

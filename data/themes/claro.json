@@ -1,0 +1,19 @@
+{
+  "name": "Claro",
+  "colors": {
+    "bg": "#f5f6f8",
+    "sidebar": "#eceef2",
+    "surface": "#ffffff",
+    "surface_alt": "#ffffff",
+    "border": "#d5d9e0",
+    "text": "#2a2f3a",
+    "text_bright": "#111418",
+    "text_soft": "#4a5260",
+    "text_muted": "#6b7280",
+    "text_dim": "#8a919c",
+    "text_faint": "#b0b6c0",
+    "accent": "#0a7ea4",
+    "accent2": "#d6336c",
+    "warning": "#b7791f"
+  }
+}

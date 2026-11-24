@@ -19,8 +19,41 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QWidget, QApplication,
 )
 
+from typing import cast
+
 from PySide6.QtCore import Qt, QPoint, QEvent, QTimer
 from PySide6.QtGui import QKeyEvent
+
+
+class CloseOnClickOutside:
+    """Mixin para diálogos normales (con marco): se cierran con un click afuera.
+
+    No se cierran si encima hay otro diálogo modal o un menú desplegable abierto
+    (ej. una confirmación, un selector de archivos o la lista de un combo).
+    Va antes de QDialog en la herencia: `class X(CloseOnClickOutside, QDialog)`.
+    """
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        QApplication.instance().installEventFilter(self)
+
+    def hideEvent(self, event):
+        QApplication.instance().removeEventFilter(self)
+        super().hideEvent(event)
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.MouseButtonPress and self._clicked_outside(event):
+            self.close()
+        return super().eventFilter(obj, event)
+
+    def _clicked_outside(self, event) -> bool:
+        if QApplication.activePopupWidget() is not None:
+            return False
+        modal = QApplication.activeModalWidget()
+        if modal is not None and modal is not self:
+            return False
+        frame = cast(QWidget, self).frameGeometry()
+        return not frame.contains(event.globalPosition().toPoint())
 
 
 # ===========================================================================

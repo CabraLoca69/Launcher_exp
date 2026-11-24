@@ -1,0 +1,19 @@
+{
+  "name": "Cyberpunk",
+  "colors": {
+    "bg": "#0d0d12",
+    "sidebar": "#0a0a10",
+    "surface": "#10101a",
+    "surface_alt": "#13131f",
+    "border": "#1e2535",
+    "text": "#c8d0e0",
+    "text_bright": "#e0e8f0",
+    "text_soft": "#8899bb",
+    "text_muted": "#4a5568",
+    "text_dim": "#3a4255",
+    "text_faint": "#2a3040",
+    "accent": "#00e5ff",
+    "accent2": "#ff2d78",
+    "warning": "#ffc857"
+  }
+}

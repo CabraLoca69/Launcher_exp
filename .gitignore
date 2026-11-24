@@ -11,3 +11,4 @@ documentacion/PENDINGS.md
 *.spec
 *.json
 *.log
+!data/themes/*.json

@@ -7,8 +7,7 @@ if sys.platform.startswith("win"):
     import win32com.client
 
 #--------- imports internos -------
-from data_access.datafiles import ICONS_CACHE_DIR, ICONS, db
-from helpers.icon_utils import load_icon
+from data_access.datafiles import ICONS_CACHE_DIR, ICONS
 
 
 def launch_args(platform_name: str, game_name: str) -> str:

@@ -10,7 +10,7 @@ El proyecto está organizado en capas, de abajo (datos crudos) hacia arriba (int
 launcher69.py            ← entry point
         │
         ▼
-interface_files/         ← UI (Tk y Qt en paralelo)
+interface_files/         ← UI (Qt / PySide6)
         │
         ▼
 helpers/                 ← lógica de negocio / orquestación
@@ -25,7 +25,7 @@ data_access/             ← persistencia (db local + cloud)
 data/                    ← archivos crudos (db, iconos, cloud config)
 ```
 
-La idea de fondo: **las interfaces (Tk/Qt) no acceden directo a datos ni al SO**; pasan siempre por `helpers/`, que a su vez delega en `platform_adapters/` (si depende del SO) o en `data_access/` (si es persistencia).
+La idea de fondo: **la interfaz no accede directo a datos ni al SO**; pasan siempre por `helpers/`, que a su vez delega en `platform_adapters/` (si depende del SO) o en `data_access/` (si es persistencia).
 
 ---
 
@@ -45,37 +45,33 @@ Carpeta de contenido, no de código. Guarda todo lo que el programa lee/escribe 
 ## `/data_access`
 Todo lo que toca **persistencia**: base de datos local y sincronización en la nube.
 
-- **`sqlitedb.py`** — la base de datos en sí (conexión, esquema, queries).
-- **`datafiles.py`** — resuelve los *paths* para acceder a la información (dónde está cada archivo de datos).
-- **`machine_id.py`** — genera/provee el ID único de la máquina, usado para no pisar datos entre dispositivos en el cloud sync.
-- **`cloudsync.py`** — maneja todo lo relacionado a la sincronización con Google Drive (sube/baja el JSON, usa `machine_id` para diferenciar).
+- **`store.py`** — la base de datos en sí: esquema (tablas `platforms`, `platform_folders`, `games`, `sessions`, `settings`) y **todo** el SQL del proyecto. El resto del código usa sus métodos con nombre de negocio.
+- **`datafiles.py`** — resuelve los *paths* de los archivos de datos y crea la instancia `store`.
+- **`migrate_kv.py`** — migración única desde la DB clave-valor vieja (`config.db` + `notas.db`) a `launcher.db`.
+- **`machine_id.py`** — genera/provee el ID único de la máquina; cada sesión de juego lo guarda.
+- **`cloudsync.py`** — sincronización con Google Drive: sube/baja la lista de sesiones y la mezcla con la local.
 
 ---
 
 ## `/helpers`
 La capa de **lógica de negocio**: es el "backend" real del launcher, entre la UI y los datos/SO.
 
-- **`data_manager.py`** — backend de manejo de datos (habla con `data_access/sqlitedb.py`).
+- **`data_manager.py`** — arma los datos que muestra la UI y maneja favoritos (habla con `data_access/store.py`).
 - **`file_manager.py`** — backend de manejo de programas (escaneo de directorios, altas/bajas de ejecutables).
 - **`games_launcher.py`** — backend del lanzamiento de juegos/programas.
 - **`safe_threading`** — se encarga de lanzar hilos (para no bloquear la UI, ej. durante escaneos largos).
-- **`icon_utils.py`** — convierte `.ico` → `.png`, genera iconos para la interfaz Tk.
-- **`qicon_utils.py`** — equivalente a `icon_utils.py` pero para Qt.
-- **`helpers.py`** — utilidades varias; hoy en día es específico de Tk (candidato a renombrar/mover si crece).
-
-> 🔎 Nota mental: `icon_utils.py` y `qicon_utils.py` existen separados porque Tk y Qt manejan imágenes distinto. Si en algún momento unificás la UI a solo Qt, `icon_utils.py` quedaría obsoleto.
+- **`db_qwatcher.py`** — vigila (con un timer de Qt) si terminó un juego que corre en otro proceso.
+- **`icon_utils.py`** — convierte `.ico` → `.png` (lo usan `qicon_utils.py` e `icons_handler.py`).
+- **`qicon_utils.py`** — carga íconos como `QIcon`.
 
 ---
 
 ## `/interface_files`
-Todo lo visual. **Hay dos interfaces en paralelo**: la vieja (Tk) y la nueva en desarrollo (Qt/PySide6).
+Todo lo visual, en Qt/PySide6. La UI Tk se eliminó (la última versión que la tiene es el tag `ultima-version-tk`).
 
-- **`ui_handler.py`** — genera el `event_bus` y decide qué renderer de menú usar (Tk y Qt manejan menús distinto). Es el punto de entrada de esta capa.
-- **`event_bus.py`** — los buses de eventos, uno por interfaz.
-- **Qt:** `qt_interface.py`, `qt_menus_renderer.py`, `qt_popups.py`
-- **Tk:** `tk_interface.py`, `tk_menus_renderer.py`, `tk_popups.py`
-
-Cada trío (interfaz + menús + popups) es autocontenido para su framework. No se mezclan entre sí; `ui_handler.py` es el que decide cuál instanciar.
+- **`ui_handler.py`** — genera el `event_bus` (Qt, o uno vacío para `--launch`). Es el punto de entrada de esta capa.
+- **`event_bus.py`** — avisa a la UI cuando un juego arranca o termina.
+- **`qt_interface.py`**, **`qt_menus_renderer.py`**, **`qt_popups.py`** — la interfaz, sus menús y sus diálogos.
 
 ---
 
@@ -83,8 +79,7 @@ Cada trío (interfaz + menús + popups) es autocontenido para su framework. No s
 Todo lo que **cambia de comportamiento según el sistema operativo**. Patrón strategy/factory: un "handler" central elige la implementación correcta.
 
 - **`platform_handler.py`** — el factory/strategy: elige el comportamiento de todos los scripts de este directorio según el SO detectado.
-- **`registry.py`** — actualmente duplica el rol de `platform_handler.py`; **está en proceso de eliminación** (quedó de un refactor, solo se le cambió el nombre). ⚠️ No agregar lógica nueva acá.
-- **`executable_handler.py`** — maneja lo específico de ejecutables por SO.
+- **`executables_handler.py`** — qué es un ejecutable en cada SO y cómo se llama el juego (quita la extensión según el SO).
 - **`icons_handler.py`** — extracción/manejo de iconos según SO.
 - **`menus_handler.py`** — opciones de menús según SO.
 - **`paths_handler.py`** — normalización/resolución de paths según SO.
@@ -97,22 +92,22 @@ Todo lo que **cambia de comportamiento según el sistema operativo**. Patrón st
 
 - **`base_path.py`** — provee el directorio raíz del proyecto (referencia para todos los paths relativos).
 - **`build.py`** — genera el ejecutable/binario final del programa (script de empaquetado).
-- **`launcher69.py`** — **entry point**. Decide si:
-  - levantar la interfaz (Qt por defecto, Tk con `--tk`), o
-  - lanzar un programa puntual (`--launch 'nombre_exe'`) sin abrir la UI.
+- **`launcher69.py`** — **entry point**. Al arrancar corre la migración pendiente (si hay DB vieja) y resume los meses cerrados. Después decide si:
+  - levantar la interfaz, o
+  - lanzar un programa puntual (`--launch "juego" [--platform "plataforma"]`) sin abrir la UI.
 
 ---
 
 ## Flujo típico (ejemplo: abrir el launcher y lanzar un juego)
 
-1. `launcher69.py` arranca, sin argumentos → decide levantar la UI en desarrollo.
+1. `launcher69.py` arranca, migra la DB vieja si hace falta, resume los meses cerrados y, sin argumentos, levanta la UI.
 2. Si 'cloudsync' esta habilitado se baja la informacion desde drive y se mergea.
     (dependiendo la cantidad de datos/velocidad de internet, es practicamente instantaneo)
-3. `ui_handler.py` arma el `event_bus` y elige el renderer Qt.
+3. `ui_handler.py` arma el `event_bus`.
 4. `qt_interface.py` pinta la lista de plataformas/programas, pidiendo los datos a `helpers/data_manager.py`.
-5. `data_manager.py` consulta `data_access/sqlitedb.py`.
+5. `data_manager.py` consulta `data_access/store.py`.
 6. Usuario hace doble click en un juego → `helpers/games_launcher.py` entra en acción.
 7. `games_launcher.py` delega en `platform_adapters/runners_handler.py` (que sabe cómo lanzar procesos según el SO).
-8. Al cerrar/trackear tiempo, se actualiza la db (`sqlitedb.py`) y, si corresponde, `cloudsync.py` sube el cambio a Drive.
+8. Mientras corre, cada 60 s se guarda la duración de la sesión en `store.py`; al cerrar se marca como terminada y, si corresponde, `cloudsync.py` sube las sesiones a Drive.
 
 ---

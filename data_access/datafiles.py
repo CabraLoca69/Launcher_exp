@@ -1,5 +1,5 @@
 #--------- imports internos -------
-from .sqlitedb import SQLiteDatabase
+from .store import Store
 from base_path import get_portable_base_dir
 
 # ------------------------------
@@ -26,8 +26,10 @@ THEMES_DIR.mkdir(parents=True, exist_ok=True)
 # ------------------------------
 # Archivos locales
 # ------------------------------
-CONFIG_FILE = DB_DIR / "config.db"
-NOTES_FILE = DB_DIR / "notas.db"
+DB_FILE = DB_DIR / "launcher.db"
+# DB clave-valor vieja: solo se lee una vez para migrar (data_access/migrate_kv.py)
+OLD_CONFIG_FILE = DB_DIR / "config.db"
+OLD_NOTES_FILE = DB_DIR / "notas.db"
 
 # ------------------------------
 # Archivos para Google Drive
@@ -38,13 +40,6 @@ DRIVE_FOLDER_NAME = "GameLauncherData"
 BACKUP_FILE_NAME = "playtime_backup.json"
 
 # ------------------------------
-# Cargar configuración y notas
+# Base de datos
 # ------------------------------
-db = SQLiteDatabase(CONFIG_FILE)
-notes_db = SQLiteDatabase(NOTES_FILE)
-
-db.ensure("global.cloud_sync_enabled", False)
-db.ensure("global.email", None)
-db.ensure("global.allow_multiple_games", True)
-db.ensure("global.tab_order", [])
-db.ensure("global.last_selected_tab", None)
+store = Store(DB_FILE)

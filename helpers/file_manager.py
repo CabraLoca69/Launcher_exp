@@ -1,151 +1,96 @@
-import os
-import logging
-import threading
-import psutil
-import time
-import sys
-import json
 import glob
+import logging
+import os
 from pathlib import Path
-from datetime import datetime
 
-#--------- imports internos -------
-from data_access.cloudsync import call_upload
-from data_access.datafiles import ICONS, ICONS_CACHE_DIR, db
-from data_access.machine_id import get_machine_id
-
-from .safe_threading import safe_thread
-
-from interface_files.ui_handler import get_event_bus
-
+# --------- imports internos -------
+from data_access.datafiles import ICONS_CACHE_DIR, store
 from platform_adapters.platform_handler import PlatformHandler
 
-class FileManager():
-    def __init__(self):
-        self.grouped = True
-        pass
-    
-    def add_folder(self, platform_name, folder):  # agrega un directorio a la lista   
-        # Asegura que exista la estructura base de la plataforma
-        db.ensure(f"{platform_name}.platform_folders", [])
-        db.ensure(f"{platform_name}.favorites", [])
-        
-        # Ahora agregamos la carpeta si no está
-        folders = db.get(f"{platform_name}.platform_folders")
-        if folder not in folders:
-            folders.append(folder)
-            db.set(f"{platform_name}.platform_folders", folders)
+logger = logging.getLogger(__name__)
 
+IGNORE_KEYWORDS = (
+    "vc_redist",
+    "unins",
+    "setup",
+    "install",
+    "dxsetup",
+    "report",
+    "dotnet",
+    "readme",
+    "helper",
+    "support",
+    "launcher",
+    "win64",
+)
+
+
+class FileManager:
+    def add_platform(self, platform_name: str, folder: str) -> None:
+        """Crea la plataforma (o la vuelve a mostrar) y escanea su primera carpeta."""
+        store.add_platform(platform_name)
+        self.add_folder(platform_name, folder)
+
+    def add_folder(self, platform_name: str, folder: str) -> str:
+        store.add_folder(platform_name, folder)
         self.scan_for_games(platform_name)
         return folder
 
     def add_game(self, platform_name: str, exe_path: str) -> tuple[bool, str]:
-        exe_name = PlatformHandler().get("exedetect").game_name(exe_path)
-        key = f"{platform_name}.game_list.{exe_name}"
+        name = PlatformHandler().get("exedetect").game_name(exe_path)
+        if not store.add_game(platform_name, name, exe_path):
+            return False, f"Ya existe un juego llamado '{name}' en esta plataforma."
+        return True, name
 
-        if db.get(key) is not None:
-            return False, f"Ya existe un juego llamado '{exe_name}' en esta plataforma."
+    def delete_game(self, platform_name: str, game_name: str) -> None:
+        """Oculta el juego (sus horas se conservan) y borra su ícono cacheado."""
+        game = store.get_game(platform_name, game_name)
+        if game:
+            self.remove_game_icon(game.path)
+        store.hide_game(platform_name, game_name)
 
-        self._set_game_path(platform_name, exe_name, exe_path)
-        return True, exe_name
-
-    def _set_game_path(self, platform_name: str, exe_name: str, exe_path: str) -> None:
-        db.set(f"{platform_name}.game_list.{exe_name}", exe_path)
-
-    def delete_game(self, platform_name: str, game_name: str):
-        with db.lock:
-            game_path = db.get(f"{platform_name}.game_list.{game_name}")
-            if game_path:
-                self.remove_game_icon(game_path)
-
-            db.delete(f"{platform_name}.game_list.{game_name}")
-            db.delete(f"{platform_name}.game_times.{game_name}")
-            db.delete(f"{platform_name}.game_total_times.{game_name}")
-
-            favorites = db.get(f"{platform_name}.favorites", default=[])
-            if game_name in favorites:
-                favorites.remove(game_name)
-                db.set(f"{platform_name}.favorites", favorites)
-
-    def delete_folder(self, platform_name: str, folder_path: str):
-        removed_games = []
-
-        with db.lock:
-            game_list = db.get_children(f"{platform_name}.game_list")
-            for game_name, game_path in game_list.items():
-                if folder_path in game_path:
-                    self.delete_game(platform_name, game_name)
-                    removed_games.append(game_name)
-
-            folders = db.get(f"{platform_name}.platform_folders", default=[])
-            new_folders = [f for f in folders if f != folder_path]
-            db.set(f"{platform_name}.platform_folders", new_folders)
-
-        return removed_games
-    
-    def rename_platform(self, old_name: str, new_name: str) -> bool:
-        with db.lock:
-            tab_order = db.get("global.tab_order", default=[])
-            if old_name not in tab_order:
-                return False
-
-            db.rename_prefix(old_name, new_name)  
-
-            index = tab_order.index(old_name)
-            tab_order[index] = new_name
-            db.set("global.tab_order", tab_order)
-
-        return True
-
-    def scan_for_games(self, platform_name):
-        ignore_keywords = [
-            kw.lower() for kw in [
-                "vc_redist", "unins", "setup", "install", "dxsetup", "report",
-                "dotnet", "readme", "helper", "support", "launcher", "win64"
-            ]
+    def delete_folder(self, platform_name: str, folder_path: str) -> list[str]:
+        prefix = os.path.join(folder_path, "")  # con separador: /PC no incluye /PC2
+        removed = [
+            g.name for g in store.list_games(platform_name) if g.path.startswith(prefix)
         ]
+        for name in removed:
+            self.delete_game(platform_name, name)
+        store.remove_folder(platform_name, folder_path)
+        return removed
 
-        folders = db.get(f"{platform_name}.platform_folders", [])
+    def delete_platform(self, platform_name: str) -> None:
+        for game in store.list_games(platform_name):
+            self.remove_game_icon(game.path)
+        store.hide_platform(platform_name)
+
+    def rename_platform(self, old_name: str, new_name: str) -> bool:
+        return store.rename_platform(old_name, new_name)
+
+    def scan_for_games(self, platform_name: str) -> None:
         detector = PlatformHandler().get("exedetect")
-
-        for path in folders:
-            if not os.path.isdir(path):
+        for folder in store.list_folders(platform_name):
+            if not os.path.isdir(folder):
                 continue
-
-            for root, _, files in os.walk(path):
+            for root, _, files in os.walk(folder):
                 for file in files:
                     full_path = os.path.join(root, file)
-
                     if not detector.is_executable(full_path):
                         continue
-
-                    if any(k in file.lower() for k in ignore_keywords):
+                    if any(k in file.lower() for k in IGNORE_KEYWORDS):
                         continue
+                    store.upsert_game(
+                        platform_name, detector.game_name(file), full_path
+                    )
 
-                    key = detector.game_name(file)
-                    db.set(f"{platform_name}.game_list.{key}", full_path)
-        
-    def sort_key(self, game_name, game_times):
-        sessions = game_times.get(game_name, [])
-        if sessions:
-            try:
-                last_played = datetime.strptime(sessions[-1]["Start"], "%Y-%m-%d %H:%M:%S")
-                return (0, -last_played.timestamp())
-            except ValueError:
-                return (0, float('-inf'))
-        return (1, game_name.lower())    
-
-    def remove_game_icon(self, game_path):
+    def remove_game_icon(self, game_path: str) -> None:
         if not game_path:
             return
-            
-        base_name = Path(os.path.basename(game_path)).stem
-        icon_pattern = os.path.join(ICONS_CACHE_DIR , base_name + ".*") 
-
-        # Buscar y eliminar cualquier archivo que coincida
-        for icon_file in glob.glob(icon_pattern):
+        pattern = os.path.join(
+            ICONS_CACHE_DIR, glob.escape(Path(game_path).stem) + ".*"
+        )
+        for icon_file in glob.glob(pattern):
             try:
                 os.remove(icon_file)
-
             except OSError as e:
-                print(f"No se pudo eliminar {icon_file}: {e}")
+                logger.warning("No se pudo eliminar %s: %s", icon_file, e)

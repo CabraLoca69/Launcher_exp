@@ -5,7 +5,7 @@ import launcher69
 
 def test_parse_launch_with_platform():
     args = launcher69.parse_args(["--launch", "Hollow", "--platform", "steam"])
-    assert (args.launch, args.platform, args.tk) == ("Hollow", "steam", False)
+    assert (args.launch, args.platform) == ("Hollow", "steam")
 
 
 def test_parse_launch_without_platform_is_allowed():

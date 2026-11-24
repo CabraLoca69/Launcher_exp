@@ -4,7 +4,7 @@ import platform
 import subprocess
 import ctypes
 from pathlib import Path
-from PIL import Image, ImageTk
+from PIL import Image
 
 #--------- imports internos -------
 from data_access.datafiles import ICONS, ICONS_CACHE_DIR
@@ -33,28 +33,10 @@ def _fallback_icon(size):
     return fallback
 
 class IconProvider:
-    def set_window_icon(self, window, icon_name="icon.ico"):
-        raise NotImplementedError
-        
     def get_icon(self, path: str, size=(16, 16)):
         raise NotImplementedError
 
 class WindowsIconProvider(IconProvider):
-    #____ ICONO DE LA VENTANA ______
-    def set_window_icon(self, window, icon_name="icon.ico"):
-        icon_path = Path(ICONS) / icon_name
-        def resource_path(rel_path):
-            if hasattr(sys, "_MEIPASS"):
-                return os.path.join(sys._MEIPASS, rel_path)
-            return rel_path
-        
-        icon_path = resource_path(icon_path)
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Launcher69.App")
-        try:
-            window.iconbitmap(icon_path)
-        except Exception as e:
-            print(f"Error seteando icono: {e}")
-    
     #_______extrae iconos de un .exe _____
     def get_icon(self, path, size=(16, 16)):
         exe_name = Path(path).stem
@@ -108,25 +90,6 @@ class WindowsIconProvider(IconProvider):
         return _fallback_icon(size)
 
 class LinuxIconProvider(IconProvider):
-    #____ ICONO DE LA VENTANA ______
-    def set_window_icon(self, window, icon_name="icon.ico"):
-        icon_path = Path(ICONS) / icon_name
-        
-        # Convertir a PNG (si no existe ya)
-        png_path = icon_path.with_suffix(".png")
-        if not png_path.exists():
-            try:
-                img = Image.open(icon_path)
-                img.save(png_path)
-            except Exception as e:
-                print(f"[WARN] No se pudo convertir {icon_path} a PNG: {e}")
-                return
-
-        # Usar el PNG en Linux/macOS
-        img = Image.open(png_path)
-        photo = ImageTk.PhotoImage(img)
-        window.tk.call('wm', 'iconphoto', window._w, photo)
-        window._icon_photo = photo  # mantener referencia
 
     def get_icon(self, path, size=(16, 16)):
         if self.is_wine_executable(path):
@@ -163,7 +126,7 @@ class LinuxIconProvider(IconProvider):
         if not icon_path:
             return _fallback_icon(size)
 
-        return ico_path
+        return icon_path
 
     # ---------------- extrae el icono de un wine como si fuese un .exe ----------------
     def is_wine_executable(self, path: str) -> bool:

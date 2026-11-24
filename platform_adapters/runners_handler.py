@@ -4,8 +4,7 @@ import psutil
 import time
 
 #--------- imports internos -------
-from data_access.datafiles import db
-from .executables_handler import UnixExecutableDetector
+from data_access.datafiles import store
 
 INVALID_NAMES = {
     "reaper", "wineserver", "steam", "steamwebhelper",
@@ -13,24 +12,22 @@ INVALID_NAMES = {
 }
 
 class GameRunner:
-    def run(self, game_path):
+    def run(self, game_path: str, steam_appid: str | None = None):
         raise NotImplementedError
 
 class WindowsRunner(GameRunner):
-    def run(self, game_path):
+    def run(self, game_path, steam_appid=None):
         return subprocess.Popen(game_path)
 
 class LinuxNativeRunner(GameRunner):
-    def run(self, game_path):
+    def run(self, game_path, steam_appid=None):
         return subprocess.Popen([game_path])
 
 class LinuxWineRunner(GameRunner):
     def __init__(self, wineprefix=None):
         self.wineprefix = wineprefix or os.path.expanduser("~/.wine")
 
-    def run(self, game_path):
-        game_name = UnixExecutableDetector().game_name(game_path)
-        steam_appid = db.get(f"global.steam_ids.{game_name}")
+    def run(self, game_path, steam_appid=None):
         game_exe = os.path.basename(game_path) #este devuelve con el .exe
 
         if steam_appid:
@@ -101,12 +98,12 @@ class LinuxWineRunner(GameRunner):
             return False
 
 class LinuxSelector(GameRunner):
-    def run(self, game_path):
+    def run(self, game_path, steam_appid=None):
         ext = os.path.splitext(game_path)[1].lower()
         needs_wine = ext in [".exe", ".bat", ".cmd"]
 
         if needs_wine:
-            wineprefix = db.get("global.wineprefix", os.path.expanduser("~/.wine"))
-            return LinuxWineRunner(wineprefix).run(game_path)
+            wineprefix = store.get_setting("wineprefix", os.path.expanduser("~/.wine"))
+            return LinuxWineRunner(wineprefix).run(game_path, steam_appid)
 
         return LinuxNativeRunner().run(game_path)

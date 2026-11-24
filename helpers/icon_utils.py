@@ -1,18 +1,9 @@
-import os
-import sys
-import platform
-import ctypes
 from pathlib import Path
-from PIL import Image, ImageTk
 
-def load_icon(path, size=(16,16)):
-    path = Path(path)
-    if platform.system() == "Linux" and path.suffix.lower() == ".ico":
-        path = ico_to_png(path, output_dir=path.parent)
-    img = Image.open(path).resize(size, Image.LANCZOS)
-    return ImageTk.PhotoImage(img)
+from PIL import Image
 
-def ico_to_png(ico_path, output_dir=None, size=(256,256)):
+
+def ico_to_png(ico_path, output_dir=None, size=(256, 256)):
     ico_path = Path(ico_path)
     if not ico_path.exists():
         raise FileNotFoundError(f"No se encontró el archivo: {ico_path}")
@@ -26,7 +17,7 @@ def ico_to_png(ico_path, output_dir=None, size=(256,256)):
 
     png_path = output_dir / (ico_path.stem + ".png")
 
-    #Si ya existe, no lo volvemos a generar
+    # Si ya existe, no lo volvemos a generar
     if png_path.exists():
         return png_path
 

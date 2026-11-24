@@ -17,12 +17,12 @@ Se puede usar de 2 formas:
 1. **Interfaz directa**: doble click al ejecutable y accedés a ella.
 2. **Acceso directo**: creado por el mismo launcher, o manualmente con el argumento `--launch 'nombre_exe'`.
 
-Actualmente el launcher tiene 2 interfaces utilizables:
-
-| Comando | Interfaz |
+| Comando | Qué hace |
 |---|---|
-| *(sin argumentos)* | UI en desarrollo |
-| `--tk` | UI antigua |
+| *(sin argumentos)* | Abre la interfaz |
+| `--launch "juego" --platform "plataforma"` | Lanza el juego sin abrir la interfaz y registra el tiempo (`--platform` es opcional) |
+
+La interfaz vieja (Tk, `--tk`) se eliminó; la última versión que la incluye es el tag `ultima-version-tk`.
 
 ## ¿Cómo funciona?
 
@@ -42,17 +42,20 @@ A partir de ahí, cada vez que entrés vas a tener la plataforma (con el nombre 
 ### 2. Gestionar programas y plataformas
 Click derecho en un espacio vacío → **"Agregar programa"**.
 
-Desde el menú también podés:
-- Quitar un programa
-- Reescanear el directorio
-- Agregar más directorios a la misma plataforma (repite el mismo proceso de escaneo)
-- Eliminar la plataforma directamente
+Desde el menú de un juego podés quitarlo, marcarlo como favorito, crear accesos directos o cambiar su ejecutable. Con click derecho sobre la pestaña de la plataforma podés:
+- Renombrarla
+- Reescanear sus directorios ("Recargar")
+- Agregar o quitar directorios (agregar repite el escaneo)
+- Cerrarla
+
+Quitar un programa o una plataforma **no borra las horas jugadas**: dejan de mostrarse, y si volvés a agregarlos (o reescaneás) reaparecen con su historial.
 
 ### 3. Cloud sync
 El launcher sincroniza los datos en la nube para no perderlos:
 
-- Todo se guarda en un **JSON dentro de una carpeta en Google Drive**.
-- Se usa un **ID por máquina** para diferenciar el origen de los datos, así nunca se pisa información entre dispositivos.
+- Todo se guarda en un **JSON dentro de una carpeta en Google Drive**, con la lista de sesiones de juego.
+- Cada sesión tiene un ID único y el **ID de la máquina** donde se jugó, así nunca se pisa información entre dispositivos y sincronizar dos veces no duplica horas.
+- Las sesiones de meses ya cerrados se resumen en una sola fila por juego y por mes.
 
 > ⚠️ Actualmente **solo yo puedo usar esta función**: el programa no está publicado, así que hay que habilitar el acceso a la API desde mi propia cuenta de Google. Si activás el cloud sync sin tener las credenciales de Google configuradas, el launcher no se rompe — tira un error al intentar sincronizar y sigue funcionando normalmente, simplemente sin guardar nada en la nube.
 
@@ -60,7 +63,6 @@ El launcher sincroniza los datos en la nube para no perderlos:
 
 Por el momento la forma de instalar y ejecutar es clonar el repo y ejecutar launcher69.py directamente, la interfaz puede tener errores.
 De todas formas deberias tomarte el trabajo de instalar las ['dependencias'](./requirements.txt) necesarias para que esto funcione.
-Lanzarlo desde la terminal (en linux) python launcher60.py --tk, abrira la interfaz antigua, es menos probable encontrar errores ahi.
 
 Se puede empaquetar el script ejecutando build.py, el solo decide si .exe o binario segun so. Deberias mantener la arquitectura:
 launcher69

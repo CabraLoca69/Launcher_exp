@@ -1,65 +1,37 @@
 import os
 
-#--------- imports internos -------
-from data_access.datafiles import ICONS, db
-
-from .file_manager import FileManager
-from .safe_threading import safe_thread
-
+# --------- imports internos -------
+from data_access.datafiles import ICONS, store
 from platform_adapters.platform_handler import PlatformHandler
 
-_favorites_limit= 6
+FAVORITES_LIMIT = 6
 
-class DataManager():
-    def __init__(self):
-        self.grouped = True
 
-    def reload_in_thread(self, ui, on_callback):
-        def worker():
-            all_data = []
-
-            tab_order = db.get("global.tab_order", [])        
-
-            for platform_name in tab_order:
-                all_data.append(self.collect_platform_data(platform_name))
-
-            ui.root.after(0, lambda: on_callback(all_data))
-
-        safe_thread(worker)
-
-    def collect_platform_data(self, platform_name):
-        grouped = True
+class DataManager:
+    def collect_platform_data(self, platform_name: str) -> dict:
+        """Juegos visibles de la plataforma con su ícono, en el orden de la lista."""
         default_icon = os.path.join(ICONS, "no_icon.ico")
-    
-        result = {
-            "platform": platform_name,
-            "games": [],
-            "grouped": [],
-            "favorites": [],
-            "recent": [],
-            "by_month": {}
-        }
+        icons = PlatformHandler().get("icons")
+        games = [
+            {
+                "name": g.name,
+                "path": g.path,
+                "icon": icons.get_icon(g.path) or default_icon,
+            }
+            for g in store.list_games(platform_name)
+        ]
+        return {"platform": platform_name, "grouped": games}
 
-        game_list   = db.get_children(f"{platform_name}.game_list")
-        game_times  = db.get_children(f"{platform_name}.game_times")
-        favorites   = db.get_children(f"{platform_name}.favorites")
-
-        if grouped:
-            icons = PlatformHandler().get("icons")
-            for name, path in sorted(game_list.items(), key=lambda item: FileManager().sort_key(item[0], game_times)):
-                game_info = {"name": name, "path": path, "icon": icons.get_icon(path) or default_icon}
-                result["grouped"].append(game_info)
-
-        return result
-
-    def toggle_favorite(self, platform_name, game_name, limit = _favorites_limit):
-        favorites = db.get(f"{platform_name}.favorites", [])
-        if game_name in favorites:
-            db.set(f"{platform_name}.favorites", [g for g in favorites if g != game_name])
+    def toggle_favorite(
+        self, platform_name: str, game_name: str, limit: int = FAVORITES_LIMIT
+    ) -> tuple[bool, str]:
+        game = store.get_game(platform_name, game_name)
+        if game is None:
+            return False, f"Juego '{game_name}' no encontrado."
+        if game.favorite:
+            store.set_favorite(platform_name, game_name, False)
             return True, f"Juego '{game_name}' eliminado de favoritos."
-        
-        if len(favorites) >= limit:
+        if len(store.list_favorites(platform_name)) >= limit:
             return False, f"Solo se permiten {limit} favoritos por plataforma."
-
-        db.set(f"{platform_name}.favorites", favorites + [game_name])
-        return True,f"Juego '{game_name}' agregado a favoritos."
+        store.set_favorite(platform_name, game_name, True)
+        return True, f"Juego '{game_name}' agregado a favoritos."

@@ -1,20 +1,37 @@
-import threading      
-import psutil        
-import logging       
-import json          
-import time        
-from datetime import datetime  
+import logging
+import threading
+import time
 
-#-------- imports internos -------
+import psutil
+
+# -------- imports internos -------
 from data_access.cloudsync import call_upload
-from data_access.datafiles import db
+from data_access.datafiles import store
 from data_access.machine_id import get_machine_id
-
+from data_access.store import Game
 from helpers.safe_threading import safe_thread
-
 from interface_files.ui_handler import get_event_bus
-
 from platform_adapters.platform_handler import PlatformHandler
+
+logger = logging.getLogger(__name__)
+
+HEARTBEAT_S = 60  # cada cuánto se guarda la duración de una partida en curso
+
+
+def is_process_running(pid: int) -> bool:
+    try:
+        return (
+            psutil.pid_exists(pid)
+            and psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
+        )
+    except psutil.Error:
+        return False
+
+
+def _upload_if_enabled() -> None:
+    if store.get_setting("cloud_sync_enabled", False):
+        call_upload()
+
 
 class GameLauncherController:
     _instance = None
@@ -25,195 +42,83 @@ class GameLauncherController:
         if not cls._instance:
             with cls._new_lock:
                 if not cls._instance:  # doble check adentro del lock
-                    SessionsCleaner().clean_orphaned_sessions()
+                    store.close_orphan_sessions(is_process_running)
                     cls._instance = super().__new__(cls)
         return cls._instance
 
     def __init__(self):
         if GameLauncherController._initialized:
             return
-        
-        self.already_saved = {}
         self.lock = threading.Lock()
         self.event_bus = get_event_bus()
-
         GameLauncherController._initialized = True
-        
-    # Lógica principal
+
     def launch_game(self, game_name: str, platform_name: str | None = None) -> None:
         """Lanza un juego. Sin plataforma, lo busca en todas (primera coincidencia)."""
-        platform_name, game_path = self._resolve(game_name, platform_name)
+        game = self._resolve(game_name, platform_name)
+        safe_thread(self._run_session, game, daemon=False)
 
-        def execute():
-            with self.lock:
-                allow_multiple = db.get("global.allow_multiple_games", False)
-                if not allow_multiple and db.get_children("global.actual_running"):
-                    logging.info("Ya hay un juego en ejecución, no se puede iniciar otro.")
-                    return
-
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            start_time = time.time()
-            last_update_time = start_time
-            start_dt = datetime.now()
-
-            # Uso el runner para lanzar el juego (retorna el proceso)
-            process = PlatformHandler().get("runner").run(game_path)
-            pid = process.pid
-
-            # Guardar datos iniciales
-            db.set(f"global.actual_sessions.{game_name}",{"pid": pid,"start_time": start_dt.isoformat(),}) 
-            db.set(f"global.actual_running.{game_name}", {"pid": pid})
-            
-            db.set("global.update_timestamp", time.time())
-
-            self.event_bus.notify_game_started(platform_name, game_name)
-
-            # ---------------------------
-            # Periodic saver + finalización
-            # ---------------------------
-            running = True
-            def periodic_saver():
-                nonlocal running
-                nonlocal last_update_time
-                while running:
-                    time.sleep(60)
-                    if not running:
-                        if db.get("global.cloud_sync_enabled", default=False):
-                            call_upload()
-                        break
-                    if db.get("global.cloud_sync_enabled", default=False):
-                        call_upload()
-                    last_update_time = self._save_playtime(platform_name, game_name, start_time, last_update_time, now)
-
-            safe_thread(periodic_saver)
-
-            try:
-                if psutil.pid_exists(pid):
-                    try:
-                        psutil.Process(pid).wait()
-                    except Exception as e:
-                        print(f"Erro al esperar el proceso {pid} {e}")
-            finally:
-                with self.lock:
-                    running = False
-                    db.delete(f"global.actual_running.{game_name}")
-                    db.delete(f"global.actual_sessions.{game_name}")
-                    self.event_bus.notify_game_closed(platform_name, game_name)
-                    self._finalize_playtime(platform_name, game_name, start_time, last_update_time, now)                    
-                    
-        if db.get(f"global.actual_running.{game_name}") is None:
-            safe_thread(execute, daemon= False)
-
-    def _resolve(self, game_name: str, platform_name: str | None) -> tuple[str, str]:
+    def _resolve(self, game_name: str, platform_name: str | None) -> Game:
         if platform_name is None:
-            return db.resolve_game(game_name)
-        game_path = db.get(f"{platform_name}.game_list.{game_name}")
-        if game_path is None:
-            raise ValueError(f"Juego '{game_name}' no encontrado en '{platform_name}'")
-        return platform_name, game_path
+            game = store.find_game(game_name)
+        else:
+            game = store.get_game(platform_name, game_name)
+        if game is None:
+            where = f" en '{platform_name}'" if platform_name else ""
+            raise ValueError(f"Juego '{game_name}' no encontrado{where}")
+        return game
 
-    # Helpers de guardado de tiempos
-    def _update_playtime_records(self, platform_name, game_name, pcid, diff, start_time, current_time, now):
-        with db.lock:
-            # --- ACTUALIZAR TOTAL POR PC ---
-            base_total = f"{platform_name}.game_total_times.{game_name}.{pcid}"
-            current_total = db.get(base_total, 0.0)
-            if diff > 0:
-                current_total += diff
-            db.set(base_total, round(current_total, 2))
+    def _run_session(self, game: Game) -> None:
+        with self.lock:
+            if store.open_session_for(game.platform, game.name):
+                return  # ya está corriendo (ej. doble click)
+            if (
+                not store.get_setting("allow_multiple_games", True)
+                and store.open_sessions()
+            ):
+                logger.info("Ya hay un juego en ejecución, no se puede iniciar otro.")
+                return
+            runner = PlatformHandler().get("runner")
+            process = runner.run(game.path, steam_appid=game.steam_appid)
+            session_id = store.start_session(game.id, get_machine_id(), process.pid)
 
-            # --- ACTUALIZAR SESSIONS (UI) ---
-            base = f"{platform_name}.game_times.{game_name}"
-            sessions_list = db.get(base, default=[])
-            dur_min = (current_time - start_time) / 60  # tiempo total de la sesión
+        self.event_bus.notify_game_started(game.platform, game.name)
+        started = time.time()  # reloj de pared: el tiempo suspendido también cuenta
+        stop = threading.Event()
 
-            if sessions_list and sessions_list[-1]["Start"] == now:
-                sessions_list[-1]["Tiempo"] = round(dur_min, 2)
-            else:
-                sessions_list.append({"Start": now, "Tiempo": round(dur_min, 2)})
+        def heartbeat():
+            while not stop.wait(HEARTBEAT_S):
+                store.update_session(session_id, int(time.time() - started))
+                _upload_if_enabled()
 
-            sessions_list = sessions_list[-5:]
-            db.set(base, sessions_list)
-
-
-    def _save_playtime(self, platform_name, game_name, start_time, last_update_time, now):
-        current_time = time.time()
-        diff = (current_time - last_update_time) / 60  # minutos desde el último update
-
-        if diff <= 0:
-            return last_update_time  
-
-        pcid = get_machine_id()
-        self._update_playtime_records(platform_name, game_name, pcid, diff, start_time, current_time, now)
-
-        self.already_saved[game_name] = True
-        return current_time
-
-
-    def _finalize_playtime(self, platform_name, game_name, start_time, last_update_time, now):
-        end_time = time.time()
-        diff = (end_time - last_update_time) / 60  # minutos desde el último save
-
-        pcid = get_machine_id()
-        self._update_playtime_records(platform_name, game_name, pcid, diff, start_time, end_time, now)
-
-        self.event_bus.notify_game_closed(platform_name, game_name)
-        self.already_saved.pop(game_name, None)
-
-        if db.get("global.cloud_sync_enabled", default=False):
-            time.sleep(2)
-            call_upload()
+        safe_thread(heartbeat)
+        try:
+            if psutil.pid_exists(process.pid):
+                psutil.Process(process.pid).wait()
+        except Exception:
+            logger.exception("Error esperando el proceso %s", process.pid)
+        finally:
+            stop.set()
+            store.end_session(session_id, int(time.time() - started))
+            self.event_bus.notify_game_closed(game.platform, game.name)
+            _upload_if_enabled()
 
     def register_ui(self, platform, ui_instance):
         self.event_bus.register_ui(platform, ui_instance)
 
-    def force_close_game(self, platform_name, game_name):
-        running_info = db.get(f"global.actual_running.{game_name}")
-        if running_info:
-            pid = running_info.get("pid")
-            if pid and psutil.pid_exists(pid):
-                try:
-                    psutil.Process(pid).terminate()
-                    logging.info(f"Juego '{game_name}' en plataforma '{platform_name}' cerrado forzosamente.")
-
-                except psutil.NoSuchProcess:
-                    logging.warning(f"El proceso {pid} ya no existía al intentar cerrarlo.")
-
-                except Exception as e:
-                    logging.error(f"Error al cerrar el juego '{game_name}': {e}")
-            else:
-                logging.warning(f"No se encontró un proceso activo para el juego '{game_name}'.")
-        else:
-            logging.warning(f"No hay información de ejecución para el juego '{game_name}'.")
-
-class SessionsCleaner():
-    def clean_orphaned_sessions(self):
-        actual_running = db.get_children("global.actual_running") or {}
-        actual_sessions = db.get_children("global.actual_sessions") or {}
-
-        alive_running = {}
-        alive_sessions = {}
-
-        for game_name, info in actual_running.items():
-            pid = info.get("pid")
-            if self.is_process_running(pid):
-                alive_running[game_name] = info
-                if game_name in actual_sessions:
-                    alive_sessions[game_name] = actual_sessions[game_name]
-
-        # Primero borrar todas las claves viejas
-        db.delete_prefix("global.actual_running")
-        db.delete_prefix("global.actual_sessions")
-
-        # Volver a crear las ramas desde cero
-        for game_name, info in alive_sessions.items():
-            db.set(f"global.actual_sessions.{game_name}", info)
-
-        for game_name, info in alive_running.items():
-            db.set(f"global.actual_running.{game_name}", info)
-
-    def is_process_running(self, pid):
+    def force_close_game(self, platform_name: str, game_name: str) -> None:
+        session = store.open_session_for(platform_name, game_name)
+        if session is None or session.pid is None:
+            logger.warning("No hay una sesión en curso para '%s'.", game_name)
+            return
         try:
-            return psutil.pid_exists(pid) and psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
+            psutil.Process(session.pid).terminate()
+            logger.info(
+                "Juego '%s' (%s) cerrado forzosamente.", game_name, platform_name
+            )
+        except psutil.NoSuchProcess:
+            logger.warning(
+                "El proceso %s ya no existía al intentar cerrarlo.", session.pid
+            )
         except Exception:
-            return False
+            logger.exception("Error al cerrar el juego '%s'", game_name)

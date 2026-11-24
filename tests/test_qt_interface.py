@@ -199,32 +199,46 @@ def test_settings_window_changes_theme(store, bus, app):
     assert "#f5f6f8" in app.styleSheet()  # fondo del tema claro
 
 
-def _press_at(dialog, global_point):
+def _press_on(dialog, widget):
     from PySide6.QtCore import QEvent, QPointF, Qt
     from PySide6.QtGui import QMouseEvent
 
-    local = QPointF(0, 0)
     event = QMouseEvent(
         QEvent.Type.MouseButtonPress,
-        local,
-        QPointF(global_point),
+        QPointF(1, 1),
+        QPointF(1, 1),
         Qt.MouseButton.LeftButton,
         Qt.MouseButton.LeftButton,
         Qt.KeyboardModifier.NoModifier,
     )
-    dialog.eventFilter(dialog, event)
+    dialog.eventFilter(widget, event)
 
 
 def test_settings_window_closes_on_click_outside(store, bus, app):
-    from PySide6.QtCore import QPoint
-
-    win = qt_interface.SettingsWindow(None)
+    main = qt_interface.MainWindow()
+    win = qt_interface.SettingsWindow(main)
     win.show()
     app.processEvents()
-    _press_at(win, win.frameGeometry().center())  # adentro: sigue abierta
+
+    _press_on(win, win.theme_combo)  # el selector de tema
+    _press_on(win, win.theme_combo.view())  # su lista desplegable (otra ventana)
+    _press_on(win, win.chk_multiple)
     assert win.isVisible()
-    _press_at(win, win.frameGeometry().bottomRight() + QPoint(50, 50))
+
+    _press_on(win, main.tab_widget)  # la ventana principal: afuera
     assert not win.isVisible()
+
+
+def test_click_outside_is_ignored_while_another_dialog_is_on_top(
+    store, bus, app, monkeypatch
+):
+    main = qt_interface.MainWindow()
+    win = qt_interface.SettingsWindow(main)
+    win.show()
+    other = qt_interface.QDialog(main)  # diálogo ajeno, modal, encima
+    monkeypatch.setattr(qt_interface.QApplication, "activeModalWidget", lambda: other)
+    _press_on(win, main.tab_widget)
+    assert win.isVisible()
 
 
 def test_tabs_have_no_close_button(store, bus):

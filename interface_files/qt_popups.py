@@ -19,17 +19,17 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QWidget, QApplication,
 )
 
-from typing import cast
-
-from PySide6.QtCore import Qt, QPoint, QEvent, QTimer
+from PySide6.QtCore import Qt, QObject, QPoint, QEvent, QTimer
 from PySide6.QtGui import QKeyEvent
 
 
 class CloseOnClickOutside:
     """Mixin para diálogos normales (con marco): se cierran con un click afuera.
 
-    No se cierran si encima hay otro diálogo modal o un menú desplegable abierto
-    (ej. una confirmación, un selector de archivos o la lista de un combo).
+    "Afuera" se decide por el widget clickeado, no por coordenadas: en Wayland las
+    apps no conocen la posición real de sus ventanas en pantalla. Es adentro todo
+    lo que cuelga del diálogo, incluidas sus ventanas hijas (la lista de un combo,
+    una confirmación, un selector de archivos).
     Va antes de QDialog en la herencia: `class X(CloseOnClickOutside, QDialog)`.
     """
 
@@ -42,18 +42,27 @@ class CloseOnClickOutside:
         super().hideEvent(event)
 
     def eventFilter(self, obj, event):
-        if event.type() == QEvent.Type.MouseButtonPress and self._clicked_outside(event):
+        if (
+            event.type() == QEvent.Type.MouseButtonPress
+            and isinstance(obj, QWidget)  # el evento también pasa por la QWindow
+            and self._clicked_outside(obj)
+        ):
             self.close()
         return super().eventFilter(obj, event)
 
-    def _clicked_outside(self, event) -> bool:
-        if QApplication.activePopupWidget() is not None:
-            return False
+    def _clicked_outside(self, clicked: QWidget) -> bool:
         modal = QApplication.activeModalWidget()
-        if modal is not None and modal is not self:
-            return False
-        frame = cast(QWidget, self).frameGeometry()
-        return not frame.contains(event.globalPosition().toPoint())
+        if modal is not None and modal is not self and not self._owns(modal):
+            return False  # otro diálogo ajeno está encima: no es un click "afuera" nuestro
+        return not self._owns(clicked)
+
+    def _owns(self, widget: QObject | None) -> bool:
+        """True si el widget es este diálogo o cuelga de él (aunque sea otra ventana)."""
+        while widget is not None:
+            if widget is self:
+                return True
+            widget = widget.parent()
+        return False
 
 
 # ===========================================================================

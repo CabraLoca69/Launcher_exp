@@ -40,7 +40,10 @@ class GameLauncherController:
         GameLauncherController._initialized = True
         
     # Lógica principal
-    def launch_game(self, game_name):
+    def launch_game(self, game_name: str, platform_name: str | None = None) -> None:
+        """Lanza un juego. Sin plataforma, lo busca en todas (primera coincidencia)."""
+        platform_name, game_path = self._resolve(game_name, platform_name)
+
         def execute():
             with self.lock:
                 allow_multiple = db.get("global.allow_multiple_games", False)
@@ -48,7 +51,6 @@ class GameLauncherController:
                     logging.info("Ya hay un juego en ejecución, no se puede iniciar otro.")
                     return
 
-            platform_name, game_path = db.resolve_game(game_name)
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             start_time = time.time()
             last_update_time = start_time
@@ -101,6 +103,14 @@ class GameLauncherController:
                     
         if db.get(f"global.actual_running.{game_name}") is None:
             safe_thread(execute, daemon= False)
+
+    def _resolve(self, game_name: str, platform_name: str | None) -> tuple[str, str]:
+        if platform_name is None:
+            return db.resolve_game(game_name)
+        game_path = db.get(f"{platform_name}.game_list.{game_name}")
+        if game_path is None:
+            raise ValueError(f"Juego '{game_name}' no encontrado en '{platform_name}'")
+        return platform_name, game_path
 
     # Helpers de guardado de tiempos
     def _update_playtime_records(self, platform_name, game_name, pcid, diff, start_time, current_time, now):

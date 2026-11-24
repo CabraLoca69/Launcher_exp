@@ -17,6 +17,7 @@ from googleapiclient.discovery import build
 from data_access.machine_id import get_machine_id
 from data_access.cloudsync import login_and_sync, call_merge    
 from data_access.datafiles import DATA_DIR, ICONS_CACHE_DIR, ICONS, CONFIG_FILE, TOKEN_PATH, db, notes_db
+from data_access.keys import is_valid_platform_name
 
 from helpers.data_manager import DataManager
 from helpers.file_manager import FileManager
@@ -370,6 +371,9 @@ class DraggableNotebook(tb.Notebook):
     def new_platform(self, platform_name):
         if not platform_name:
             return
+        if not is_valid_platform_name(platform_name):
+            messagebox.showwarning("Nombre inválido", "El nombre de la plataforma no puede estar vacío ni contener '.'.")
+            return
         
         folder = safe_askdirectory()
         if folder:
@@ -568,14 +572,14 @@ class GamePlatformFrame(ttk.Frame):
         _close_menu_popup(self)
 
         game_path = db.get(f"{self.platform_name}.game_list.{game_name}")
-        PlatformHandler().get("shortcut").create_direct_access(game_name, game_path)
+        PlatformHandler().get("shortcut").create_direct_access(self.platform_name, game_name, game_path)
         
     
     def create_start_menu_shortcut(self, game_name):
         _close_menu_popup(self)
         
         game_path = db.get(f"{self.platform_name}.game_list.{game_name}")
-        PlatformHandler().get("shortcut").create_start_menu_shortcut(game_name, game_path)
+        PlatformHandler().get("shortcut").create_start_menu_shortcut(self.platform_name, game_name, game_path)
 
     def launch_game(self): # lanza el ejecutable seleccionado
         _close_menu_popup(self)
@@ -1187,8 +1191,8 @@ class PropertiesWindow(AutoCloseFrame):
             return
 
         new_name = self.tab_name_var.get().strip().capitalize()
-        if not new_name:
-            self.warning_label.config(text="No podés dejar el nombre vacío.")
+        if not is_valid_platform_name(new_name):
+            self.warning_label.config(text="El nombre de la plataforma no puede estar vacío ni contener '.'.")
             self.warning_label.after(3000, lambda: self.warning_label.config(text=""))
             self.lift()
             return

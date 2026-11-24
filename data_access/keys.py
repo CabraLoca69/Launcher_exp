@@ -16,3 +16,8 @@ def key_segment(name: str) -> str:
 def game_name_from_path(path: str) -> str:
     """Nombre del juego (y segmento de clave) para un ejecutable."""
     return key_segment(Path(path).stem)
+
+
+def is_valid_platform_name(name: str) -> bool:
+    """Una plataforma es la raíz de sus claves: no puede estar vacía ni tener '.'."""
+    return bool(name.strip()) and "." not in name

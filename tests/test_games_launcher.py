@@ -94,3 +94,22 @@ def test_launch_game_blocked_when_another_is_running(clean_db, fake_launch):
     GameLauncherController().launch_game("a")
 
     assert fake_launch.calls == []
+
+
+def test_launch_game_with_platform_uses_that_platform(clean_db, fake_launch):
+    clean_db.set("global.allow_multiple_games", True)
+    clean_db.set("steam.game_list.a", "/steam/a.exe")
+    clean_db.set("gog.game_list.a", "/gog/a.exe")
+
+    GameLauncherController().launch_game("a", "gog")
+
+    assert fake_launch.calls == ["/gog/a.exe"]
+    assert clean_db.get("steam.game_times.a") is None
+    assert len(clean_db.get("gog.game_times.a")) == 1
+
+
+def test_launch_game_unknown_in_platform_raises(clean_db, fake_launch):
+    clean_db.set("steam.game_list.a", "/steam/a.exe")
+    with pytest.raises(ValueError):
+        GameLauncherController().launch_game("a", "gog")
+    assert fake_launch.calls == []

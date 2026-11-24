@@ -11,17 +11,22 @@ from data_access.datafiles import ICONS_CACHE_DIR, ICONS, db
 from helpers.icon_utils import load_icon
 
 
+def launch_args(platform_name: str, game_name: str) -> str:
+    """Argumentos con los que un acceso directo abre el launcher para este juego."""
+    return f'--launch "{game_name}" --platform "{platform_name}"'
+
+
 class ShortcutCreator:
-    def create_direct_access(self, game_name, launcher_path, game_exe_path, destino_desktop=True):
+    def create_direct_access(self, platform_name, game_name, game_path, destino_desktop=True):
         raise NotImplementedError
 
-    def create_start_menu_shortcut(self, game_name, game_path, icon_path=None):
+    def create_start_menu_shortcut(self, platform_name, game_name, game_path, icon_path=None):
         raise NotImplementedError
 
 #_____________________WINDOWS____________________
 class WindowsShortcutCreator(ShortcutCreator):
 
-    def create_direct_access(self, game_name, game_path, destino_desktop=True):
+    def create_direct_access(self, platform_name, game_name, game_path, destino_desktop=True):
         shell = win32com.client.Dispatch("WScript.Shell")
 
         desktop = shell.SpecialFolders("Desktop") if destino_desktop else os.getcwd()
@@ -33,10 +38,11 @@ class WindowsShortcutCreator(ShortcutCreator):
 
         shortcut = shell.CreateShortcut(shortcut_path)
         shortcut.TargetPath = sys.executable
-        shortcut.Arguments = f'"{game_path}"'
+        shortcut.Arguments = launch_args(platform_name, game_name)
+        shortcut.IconLocation = game_path
         shortcut.save()
 
-    def create_start_menu_shortcut(self, game_name, game_path, icon_path=ICONS):
+    def create_start_menu_shortcut(self, platform_name, game_name, game_path, icon_path=ICONS):
 
         try:
             launcher_exe = Path(sys.executable).resolve()
@@ -58,7 +64,7 @@ class WindowsShortcutCreator(ShortcutCreator):
             shortcut = shell.CreateShortcut(str(shortcut_path))
 
             shortcut.TargetPath = str(launcher_exe)
-            shortcut.Arguments = f'--launch "{game_name}"'
+            shortcut.Arguments = launch_args(platform_name, game_name)
             shortcut.WorkingDirectory = str(launcher_dir)
             shortcut.IconLocation = game_path
 
@@ -69,7 +75,7 @@ class WindowsShortcutCreator(ShortcutCreator):
 
 #______________ LINUX ______________
 class LinuxShortcutCreator(ShortcutCreator):
-    def create_direct_access(self, game_name, game_path, destino_desktop=True):
+    def create_direct_access(self, platform_name, game_name, game_path, destino_desktop=True):
         desktop_dir = self.get_desktop_dir() if destino_desktop else Path.cwd()
         desktop_dir.mkdir(parents=True, exist_ok=True)
 
@@ -80,7 +86,7 @@ class LinuxShortcutCreator(ShortcutCreator):
         content = f"""[Desktop Entry]
 Name={game_name}
 Comment=Lanzador Cl69
-Exec="{sys.executable}" --launch "{game_name}"
+Exec="{sys.executable}" {launch_args(platform_name, game_name)}
 Icon={icon_target}
 Terminal=false
 Type=Application"""
@@ -88,14 +94,14 @@ Type=Application"""
         file_path.write_text(content)
         os.chmod(file_path, 0o755)
 
-    def create_start_menu_shortcut(self, game_name, game_path, icon_path=ICONS):
+    def create_start_menu_shortcut(self, platform_name, game_name, game_path, icon_path=ICONS):
 
         app_dir = Path.home() / ".local/share/applications"
         app_dir.mkdir(parents=True, exist_ok=True)
 
         file_path = app_dir / f"{game_name.lower().replace(' ', '_')}.desktop"
         
-        command = f'"{sys.executable}" --launch "{game_name}"'
+        command = f'"{sys.executable}" {launch_args(platform_name, game_name)}'
 
         icon_target = self._resolve_icon(game_name, game_path)
 

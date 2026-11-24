@@ -18,6 +18,7 @@ from datetime import datetime
 #--------- imports internos -------
 from data_access.cloudsync import login_and_sync, call_merge
 from data_access.datafiles import DATA_DIR, THEMES_DIR, TOKEN_PATH, db
+from data_access.keys import is_valid_platform_name
 
 from helpers.data_manager import DataManager
 from helpers.file_manager import FileManager
@@ -630,11 +631,11 @@ class PlatformTab(QWidget):
 
     def create_direct_access(self, game_name):
         game_path = db.get(f"{self.platform_name}.game_list.{game_name}")
-        PlatformHandler().get("shortcut").create_direct_access(game_name, game_path)
+        PlatformHandler().get("shortcut").create_direct_access(self.platform_name, game_name, game_path)
         
     def create_start_menu_shortcut(self, game_name):
         game_path = db.get(f"{self.platform_name}.game_list.{game_name}")
-        PlatformHandler().get("shortcut").create_start_menu_shortcut(game_name, game_path)
+        PlatformHandler().get("shortcut").create_start_menu_shortcut(self.platform_name, game_name, game_path)
 
 
 # clouding
@@ -879,6 +880,9 @@ def ask_platform_folder(window):
         window, "Nombre de la biblioteca", "Ingrese un nombre:"
     )
     if not ok or not platform_name.strip():
+        return None
+    if not is_valid_platform_name(platform_name):
+        QMessageBox.warning(window, "Nombre inválido", "El nombre de la plataforma no puede estar vacío ni contener '.'.")
         return None
  
     folder = QFileDialog.getExistingDirectory(

@@ -16,7 +16,13 @@ logger = logging.getLogger(__name__)
 
 _EPOCH = "1970-01-01T00:00:00"
 LEGACY_PC = "__legacy"  # totales viejos que no sabían de qué PC eran
-_SETTINGS = ("email", "cloud_sync_enabled", "allow_multiple_games", "wineprefix")
+_SETTINGS = (
+    "email",
+    "cloud_sync_enabled",
+    "allow_multiple_games",
+    "wineprefix",
+    "last_selected_tab",
+)
 
 
 def _read_kv(path: Path) -> dict[str, Any]:

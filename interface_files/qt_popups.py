@@ -114,6 +114,7 @@ class CustomPopupMenu(BasePopup):
 
         btn.clicked.connect(_on_click)
         self._layout.addWidget(btn)
+        return btn
 
     def show_at(self, global_pos: QPoint, offset_x: int = 0, offset_y: int = 0):
         if self.isVisible():

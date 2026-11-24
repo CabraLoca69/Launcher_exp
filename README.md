@@ -42,11 +42,14 @@ A partir de ahí, cada vez que entrés vas a tener la plataforma (con el nombre 
 ### 2. Gestionar programas y plataformas
 Click derecho en un espacio vacío → **"Agregar programa"**.
 
-Desde el menú de un juego podés quitarlo, marcarlo como favorito, crear accesos directos o cambiar su ejecutable. Con click derecho sobre la pestaña de la plataforma podés:
-- Renombrarla
-- Reescanear sus directorios ("Recargar")
-- Agregar o quitar directorios (agregar repite el escaneo)
-- Cerrarla
+Desde el menú de un juego podés jugarlo, quitarlo, marcarlo como favorito, crear accesos directos o cambiar su ejecutable. Con el juego seleccionado, **Enter** lo lanza y **Supr** lo quita (pide confirmación).
+
+Con click derecho sobre la pestaña de la plataforma:
+- **Propiedades**: lista de directorios (agregar, quitar, abrir en el explorador) y renombrar la plataforma
+- **Recargar**: reescanea sus directorios
+- **Eliminar plataforma**
+
+En **⚙ Configuración** están la sincronización en la nube y la opción de permitir varios juegos abiertos a la vez.
 
 Quitar un programa o una plataforma **no borra las horas jugadas**: dejan de mostrarse, y si volvés a agregarlos (o reescaneás) reaparecen con su historial.
 

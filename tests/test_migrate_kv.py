@@ -30,7 +30,7 @@ def migrated(tmp_path):
             "global.email": "yo@x.com",
             "global.cloud_sync_enabled": True,
             "global.allow_multiple_games": False,
-            "global.last_selected_tab": "steam",  # solo lo usaba Tk: no se migra
+            "global.last_selected_tab": "gog",
             "global.actual_running.Hollow": {"pid": 1},  # estado efímero: no se migra
             "global.steam_ids.Hollow": 367520,
             "steam.platform_folders": ["/steam"],
@@ -63,7 +63,7 @@ def test_platforms_folders_and_settings(migrated):
     assert migrated.get_setting("email") == "yo@x.com"
     assert migrated.get_setting("cloud_sync_enabled") is True
     assert migrated.get_setting("allow_multiple_games") is False
-    assert migrated.get_setting("last_selected_tab") is None
+    assert migrated.get_setting("last_selected_tab") == "gog"
 
 
 def test_games_with_favorites_steam_id_and_notes(migrated):

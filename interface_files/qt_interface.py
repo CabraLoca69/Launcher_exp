@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QTabWidget, QLabel, QPushButton, QScrollArea,
     QFileDialog, QTreeWidget, QTreeWidgetItem,
     QInputDialog, QApplication, QFrame, QSizePolicy, QDialog,
-    QCheckBox, QMessageBox, QPlainTextEdit, QDialogButtonBox
+    QCheckBox, QMessageBox, QPlainTextEdit, QDialogButtonBox, QListWidget
 )
 
 from PySide6.QtCore import Qt, QSize, QObject, QThread, Signal, QTimer, QPoint
@@ -16,8 +16,8 @@ from pathlib import Path
 from datetime import datetime
 
 #--------- imports internos -------
-from data_access.cloudsync import login_and_sync
-from data_access.datafiles import THEMES_DIR, store
+from data_access.cloudsync import call_merge, login_and_sync
+from data_access.datafiles import ICONS, THEMES_DIR, store
 from data_access.store import Session
 
 from helpers.data_manager import DataManager
@@ -31,6 +31,10 @@ from .qt_popups import InputDialog, ConfirmDialog, CustomPopupMenu
 from .ui_handler import get_event_bus
 
 from platform_adapters.platform_handler import PlatformHandler
+
+LIVE_REFRESH_MS = 5000  # refresco del detalle de un juego que está corriendo
+EXTERNAL_POLL_MS = 3000  # búsqueda de juegos lanzados desde accesos directos
+
 
 # label de sesiones, abajo en el mainwindow
 class SessionsBar(QWidget):
@@ -292,12 +296,23 @@ class GameDetailPanel(QWidget):
  
         scroll.setWidget(self.sessions_container)
         root_layout.addWidget(scroll, stretch=1)
+
+        self._icon: QIcon | None = None
+        # Mientras el juego mostrado corre, refresca horas y sesiones
+        self._live_timer = QTimer(self)
+        self._live_timer.timeout.connect(self._refresh_if_running)
+        self._live_timer.start(LIVE_REFRESH_MS)
+
+    def _refresh_if_running(self):
+        if self.current_game and store.open_session_for(self.platform_name, self.current_game):
+            self.show_game(self.current_game, self._icon)
  
     # ------------------------------------------------------------------
     # API pública: actualizar el panel con un juego nuevo
     # ------------------------------------------------------------------
     def show_game(self, game_name: str, icon: QIcon | None = None):
         self.current_game = game_name
+        self._icon = icon
  
         # Tiempo total
         total_s = store.total_seconds(self.platform_name, game_name)
@@ -368,9 +383,7 @@ class GameDetailPanel(QWidget):
         game = store.get_game(self.platform_name, self.current_game or "")
         if game is None:
             return
-        text = NotesDialog.ask(self, game.name, game.notes)
-        if text is not None:
-            store.set_notes(self.platform_name, game.name, text)
+        store.set_notes(self.platform_name, game.name, NotesDialog.ask(self, game.name, game.notes))
  
     def _toggle_favorites(self):
         self.toggle_favorites.emit(self.current_game)
@@ -425,7 +438,9 @@ class PlatformTab(QWidget):
         self.games_tree.customContextMenuRequested.connect(self._on_game_right_click)
 
         supr_shortcut = QShortcut(QKeySequence("Delete"), self.games_tree)
-        supr_shortcut.activated.connect(self._delete_selected_item)
+        supr_shortcut.activated.connect(self._confirm_remove_selected)
+        for key in ("Return", "Enter"):
+            QShortcut(QKeySequence(key), self.games_tree).activated.connect(self._launch_selected)
 
         self.detail_panel.context_menu_requested.connect(
             lambda global_pos, btn_props: self.show_game_menu(
@@ -483,6 +498,10 @@ class PlatformTab(QWidget):
         menu.show_at(global_pos, offset_x=offset_x, offset_y=offset_y)
 
     def update_on_close(self, game_name, platform_name):
+        """Al cerrar un juego: reordena la lista (último jugado arriba), refresca
+        favoritos y muestra el detalle del juego con las horas nuevas."""
+        self.refresh_games()
+        self.favorites_panel.refresh()
         item = self._find_item_by_name(game_name)
         if item is None:
             logging.warning(f"No se encontró el item del juego {game_name} tras el cierre")
@@ -499,6 +518,16 @@ class PlatformTab(QWidget):
         self.favorites_panel.refresh()
 
     # ------------------------------------------------------------------
+
+    def refresh_games(self):
+        """Vuelve a leer la lista de juegos, conservando búsqueda y selección."""
+        current = self.games_tree.currentItem()
+        selected = current.text(0) if current else None
+        self.fill_games(DataManager().collect_platform_data(self.platform_name)["grouped"])
+        self._filter_games(self.search_bar.text())
+        item = self._find_item_by_name(selected) if selected else None
+        if item:
+            self.games_tree.setCurrentItem(item)
 
     def fill_games(self, games: list):
         self.games_tree.clear()
@@ -554,6 +583,15 @@ class PlatformTab(QWidget):
 
     def launch_game(self, game_name):
         GameLauncherController().launch_game(game_name, self.platform_name)
+
+    def _launch_selected(self):
+        item = self.games_tree.currentItem()
+        if item is not None:
+            self.launch_game(item.text(0))
+
+    def _confirm_remove_selected(self):
+        if self.games_tree.currentItem() is not None:
+            self.confirm_remove()
     
     def confirm_remove(self):
         dlg = ConfirmDialog(self, title="Eliminar juego",
@@ -567,11 +605,7 @@ class PlatformTab(QWidget):
     
     def add_exe(self):
         exe_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Selecciona un ejecutable",
-            "",
-            "Ejecutables (*.exe);;Todos los archivos (*)"
-        )
+            self, "Selecciona un ejecutable", "", _exe_filter())
         if not exe_path:
             return  # el usuario cancelo el dialogo
 
@@ -590,10 +624,8 @@ class PlatformTab(QWidget):
 
     def change_game_directory(self, game_name):
         try:
-            exe_path, _ = QFileDialog.getOpenFileName(self,
-                                                    "Selecciona un ejecutable",
-                                                    "",
-                                                    "Ejecutables (*.exe);;Todos los archivos (*)")
+            exe_path, _ = QFileDialog.getOpenFileName(
+                self, "Selecciona un ejecutable", "", _exe_filter())
             if not exe_path:
                 return # El usuario canceló el diálogo
 
@@ -624,14 +656,13 @@ class PlatformTab(QWidget):
             self.platform_name, game_name, self._game_path(game_name))
 
 
-# clouding
-class CloudSettingsWindow(QDialog):
+class SettingsWindow(QDialog):
     login_finished = Signal(bool)  # ok, email
 
     def __init__(self, parent, on_close_callback=None):
         super().__init__(parent)
         self.setObjectName("cloudSettingsWindow")
-        self.setWindowTitle("Configuración de nube")
+        self.setWindowTitle("Configuración")
         self.parent_window = parent
         self.on_close_callback = on_close_callback
 
@@ -656,6 +687,12 @@ class CloudSettingsWindow(QDialog):
         self.btn_change_account = QPushButton("🔄 Cambiar cuenta")
         self.btn_change_account.clicked.connect(self._change_account)
         layout.addWidget(self.btn_change_account)
+
+        self.chk_multiple = QCheckBox("Permitir varios juegos abiertos a la vez")
+        self.chk_multiple.setChecked(store.get_setting("allow_multiple_games", True))
+        self.chk_multiple.toggled.connect(
+            lambda checked: store.set_setting("allow_multiple_games", checked))
+        layout.addWidget(self.chk_multiple)
 
     # ------------------------------------------------------------------
     def _toggle_clouding(self, checked):
@@ -709,6 +746,8 @@ class CloudSettingsWindow(QDialog):
 
 # Ventana principal
 class MainWindow(QMainWindow):
+    cloud_merged = Signal()
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("CLauncher69 - V2")
@@ -747,6 +786,16 @@ class MainWindow(QMainWindow):
         
         self.sessions_bar = SessionsBar()
         root_layout.addWidget(self.sessions_bar)
+
+        # Juegos lanzados desde accesos directos mientras la UI está abierta
+        self._external_timer = QTimer(self)
+        self._external_timer.timeout.connect(get_event_bus().watch_external)
+        self._external_timer.start(EXTERNAL_POLL_MS)
+
+        # Con cloud activado, al abrir se traen los datos de la nube y se refresca
+        self.cloud_merged.connect(self._refresh_all_tabs)
+        if store.get_setting("cloud_sync_enabled", False):
+            call_merge(callback=self.cloud_merged.emit)
  
     # ------------------------------------------------------------------
 
@@ -756,6 +805,22 @@ class MainWindow(QMainWindow):
     def _on_reload_finished(self, all_data: list):
         for data in all_data:
             self._add_platform_tab(data)
+        last = store.get_setting("last_selected_tab")
+        names = [self.tab_widget.tabText(i) for i in range(self.tab_widget.count())]
+        if last in names:
+            self.tab_widget.setCurrentIndex(names.index(last))
+        # Recién ahora: agregar pestañas también dispara currentChanged
+        self.tab_widget.currentChanged.connect(self._remember_tab)
+
+    def _remember_tab(self, index: int):
+        if index >= 0:
+            store.set_setting("last_selected_tab", self.tab_widget.tabText(index))
+
+    def _refresh_all_tabs(self):
+        for i in range(self.tab_widget.count()):
+            tab = self.tab_widget.widget(i)
+            tab.refresh_games()
+            tab.favorites_panel.refresh()
  
     def _add_platform_tab(self, data: dict):
         tab = PlatformTab(data["platform"])
@@ -780,8 +845,8 @@ class MainWindow(QMainWindow):
  
         self.btn_add_platform = QPushButton("Agregar Plataforma")
         self.btn_add_platform.clicked.connect(self.add_platform)
-        self.btn_sync = QPushButton("Cloud")
-        self.btn_sync.clicked.connect(self._open_cloud_settings)
+        self.btn_sync = QPushButton("⚙ Configuración")
+        self.btn_sync.clicked.connect(self._open_settings)
         layout.addWidget(self.btn_add_platform)
         layout.addWidget(self.btn_sync)
  
@@ -806,8 +871,8 @@ class MainWindow(QMainWindow):
         self._add_platform_tab(data)
         self.tab_widget.setCurrentIndex(self.tab_widget.count() - 1)
  
-    def _open_cloud_settings(self):
-        dlg = CloudSettingsWindow(self)
+    def _open_settings(self):
+        dlg = SettingsWindow(self)
         dlg.show()
 
     # ------------------------------------------------------------------
@@ -840,15 +905,12 @@ class MainWindow(QMainWindow):
         if index == -1:
             return  # click derecho fuera de cualquier pestaña, ignorar
 
-        platform_name = self.tab_widget.tabText(index)
         global_pos = tab_bar.mapToGlobal(pos)  # convertir coords locales -> globales
 
         menu = CustomPopupMenu(self, on_close_callback=None)
-        menu.add_button("Renombrar", command=lambda: self._rename_tab(index))
-        menu.add_button("Cerrar",    command=lambda: self._on_tab_close_requested(index))
-        menu.add_button("Recargar",  command=lambda: self._reload_tab(index))
-        menu.add_button("Agregar carpeta", command=lambda: self._add_folder(index))
-        menu.add_button("Quitar carpeta",  command=lambda: self._remove_folder(index))
+        menu.add_button("⚙ Propiedades", command=lambda: self._open_properties(index))
+        menu.add_button("⟳ Recargar", command=lambda: self._reload_tab(index))
+        menu.add_button("🗑 Eliminar plataforma", command=lambda: self._on_tab_close_requested(index))
         menu.show_at(global_pos)
 
     def _save_tab_order(self):
@@ -866,39 +928,12 @@ class MainWindow(QMainWindow):
         self.tab_widget.insertTab(index, tab, platform_name)
         self.tab_widget.setCurrentIndex(index)
 
-    def _rename_tab(self, index: int):
-        old = self.tab_widget.tabText(index)
-        if store.has_running_games(old):
-            QMessageBox.information(
-                self, "Renombrar", "Cerrá los juegos de esta plataforma antes de renombrarla.")
-            return
-        new, ok = QInputDialog.getText(self, "Renombrar plataforma", "Nombre nuevo:", text=old)
-        new = new.strip()
-        if not ok or not new or new == old:
-            return
-        if not self.file_manager.rename_platform(old, new):
-            QMessageBox.warning(self, "Renombrar", f"Ya existe una plataforma '{new}'.")
-            return
-        self._replace_tab(index, new)
-
-    def _add_folder(self, index: int):
+    def _open_properties(self, index: int):
         platform_name = self.tab_widget.tabText(index)
-        folder = QFileDialog.getExistingDirectory(self, "Agregar carpeta de juegos", "")
-        if folder:
-            self.file_manager.add_folder(platform_name, folder)
-            self._replace_tab(index, platform_name)
-
-    def _remove_folder(self, index: int):
-        platform_name = self.tab_widget.tabText(index)
-        folders = store.list_folders(platform_name)
-        if not folders:
-            QMessageBox.information(self, "Quitar carpeta", "La plataforma no tiene carpetas.")
-            return
-        folder, ok = QInputDialog.getItem(
-            self, "Quitar carpeta", "Sus juegos dejan de mostrarse:", folders, editable=False)
-        if ok:
-            self.file_manager.delete_folder(platform_name, folder)
-            self._replace_tab(index, platform_name)
+        dlg = PlatformPropertiesDialog(self, platform_name)
+        dlg.exec()
+        if dlg.changed:
+            self._replace_tab(index, dlg.platform_name)
 
     def _reload_tab(self, index: int):
         platform_name = self.tab_widget.tabText(index)
@@ -923,6 +958,103 @@ def ask_platform_folder(window):
  
     return platform_name.strip(), folder
  
+def _exe_filter() -> str:
+    """En Linux los binarios nativos no tienen extensión: primero "Todos"."""
+    exes = "Ejecutables (*.exe *.bat *.cmd)"
+    every = "Todos los archivos (*)"
+    return f"{exes};;{every}" if sys.platform.startswith("win") else f"{every};;{exes}"
+
+
+class PlatformPropertiesDialog(QDialog):
+    """Directorios de la plataforma (agregar, quitar, abrir) y renombrarla."""
+
+    def __init__(self, parent, platform_name: str):
+        super().__init__(parent)
+        self.platform_name = platform_name
+        self.changed = False  # si hay que reconstruir la pestaña al cerrar
+        self.file_manager = FileManager()
+        self.setWindowTitle(f"Propiedades — {platform_name}")
+        self.resize(560, 360)
+
+        tabs = QTabWidget(self)
+        QVBoxLayout(self).addWidget(tabs)
+
+        # Directorios
+        dirs = QWidget()
+        dirs_layout = QVBoxLayout(dirs)
+        self.folder_list = QListWidget()
+        self.folder_list.itemDoubleClicked.connect(lambda _: self._open_folder())
+        dirs_layout.addWidget(self.folder_list)
+        buttons = QHBoxLayout()
+        for text, slot in (("➕ Agregar", self._add_folder), ("🗑 Quitar", self._remove_folder),
+                           ("📂 Abrir", self._open_folder)):
+            btn = QPushButton(text)
+            btn.clicked.connect(slot)
+            buttons.addWidget(btn)
+        dirs_layout.addLayout(buttons)
+        tabs.addTab(dirs, "📁 Directorios")
+
+        # Nombre
+        name = QWidget()
+        name_layout = QHBoxLayout(name)
+        self.name_edit = QLineEdit(platform_name)
+        save = QPushButton("💾 Guardar")
+        save.clicked.connect(self._rename)
+        name_layout.addWidget(QLabel("Nombre:"))
+        name_layout.addWidget(self.name_edit)
+        name_layout.addWidget(save)
+        tabs.addTab(name, "📝 Nombre")
+
+        self._load_folders()
+
+    def _load_folders(self):
+        self.folder_list.clear()
+        self.folder_list.addItems(store.list_folders(self.platform_name))
+
+    def _selected_folder(self) -> str | None:
+        item = self.folder_list.currentItem()
+        return item.text() if item else None
+
+    def _add_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "Agregar carpeta de juegos", "")
+        if folder:
+            self.file_manager.add_folder(self.platform_name, folder)
+            self.changed = True
+            self._load_folders()
+
+    def _remove_folder(self):
+        folder = self._selected_folder()
+        if folder is None:
+            return
+        answer = QMessageBox.question(
+            self, "Quitar directorio",
+            f"¿Quitar '{folder}'? Sus juegos dejan de mostrarse; las horas se conservan.")
+        if answer == QMessageBox.StandardButton.Yes:
+            self.file_manager.delete_folder(self.platform_name, folder)
+            self.changed = True
+            self._load_folders()
+
+    def _open_folder(self):
+        folder = self._selected_folder()
+        if folder:
+            PlatformHandler().get("paths").goto_folder(folder)
+
+    def _rename(self):
+        new = self.name_edit.text().strip()
+        if not new or new == self.platform_name:
+            return
+        if store.has_running_games(self.platform_name):
+            QMessageBox.information(
+                self, "Renombrar", "Cerrá los juegos de esta plataforma antes de renombrarla.")
+            return
+        if not self.file_manager.rename_platform(self.platform_name, new):
+            QMessageBox.warning(self, "Renombrar", f"Ya existe una plataforma '{new}'.")
+            return
+        self.platform_name = new
+        self.changed = True
+        self.setWindowTitle(f"Propiedades — {new}")
+
+
 def _session_label(session: Session) -> str:
     if session.kind == "month":
         return f"{session.started_at[:7]}  ({session.sessions_count} sesiones)"
@@ -941,18 +1073,16 @@ class NotesDialog(QDialog):
         layout = QVBoxLayout(self)
         self.editor = QPlainTextEdit(notes)
         layout.addWidget(self.editor)
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self.accept)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
     @classmethod
-    def ask(cls, parent, game_name: str, notes: str) -> str | None:
-        """Devuelve el texto guardado, o None si se canceló."""
+    def ask(cls, parent, game_name: str, notes: str) -> str:
+        """Devuelve el texto al cerrar el editor (se guarda siempre, como en Tk)."""
         dlg = cls(parent, game_name, notes)
-        return dlg.editor.toPlainText() if dlg.exec() == QDialog.DialogCode.Accepted else None
+        dlg.exec()
+        return dlg.editor.toPlainText()
 
 
 # Worker: carga todas las plataformas guardadas en un hilo separado
@@ -985,7 +1115,12 @@ def reload_with_thread(ui, on_callback):
 # Entry point
 class QtLauncherUI:
     def launch_ui():
+        if sys.platform.startswith("win"):
+            # Agrupa la ventana con el ícono propio en la barra de tareas
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Launcher69.App")
         app = QApplication(sys.argv)
+        app.setWindowIcon(load_qicon(Path(ICONS) / "icon.ico", size=None))
         themes_path = Path(THEMES_DIR) / "theme_cyberpunk.qss"
         with open(themes_path, "r") as f:
             app.setStyleSheet(f.read())

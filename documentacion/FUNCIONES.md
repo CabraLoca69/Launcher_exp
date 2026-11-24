@@ -128,7 +128,7 @@ Patrón repetido en casi todos estos archivos: una clase base/interfaz + una imp
 **`menus_handler.py`**
 - `MenuOptions.get_options(self, game_name, btn_props, frame)` — interfaz.
 - `BaseMenuOptions` — implementación común:
-  - `_play_option(self, btn_props, frame)` — (interna) opción "jugar".
+  - `_play_option(self, game_name, btn_props, frame)` — (interna) opción "jugar".
   - `_common_options(self, game_name, frame)` — (interna) opciones compartidas entre SOs.
 - `WindowsMenuOptions.get_options(...)` / `LinuxMenuOptions.get_options(...)` — arman el menú final combinando lo común + lo específico del SO.
 
@@ -167,20 +167,25 @@ Patrón repetido en casi todos estos archivos: una clase base/interfaz + una imp
 
 **`event_bus.py`**
 - `GameEventBus` — interfaz: `register_ui`, `notify_game_started`, `notify_game_closed`.
-- `QtEventBus` — implementa la interfaz con señales Qt + `_watch_running(self, platform_name, ui_instance)` (vigila juegos que ya corrían al abrir la UI) y `_on_game_closed(self, platform_name, game_name)`.
+- `QtEventBus` — implementa la interfaz con señales Qt +:
+  - `watch_external(self)` — busca juegos lanzados desde otro proceso (accesos directos); la UI la llama con un timer.
+  - `_watch_running(self, platform_name, ui_instance)` — vigila los juegos que corren y la UI no conocía.
+  - `_on_game_closed(self, platform_name, game_name)` — avisa a la pestaña de la plataforma.
 - `NullEventBus` — implementación vacía (usada con `--launch`).
 
 **`qt_interface.py`**
 - **`SessionsBar`** — barra inferior con los juegos corriendo y su tiempo.
 - **`FavoritesPanel`**: `refresh(self)`, `_build_row(self, game_name, path)`, `_launch(self, game_name)`.
-- **`GameDetailPanel`**: `show_game(self, game_name, icon)`, `_populate_sessions(self, sessions)`, `_build_session_row(self, index, session)`, `_launch_game(self)`, `_open_notes(self)`, `_toggle_favorites(self)`, `_show_props_menu(self)`.
+- **`GameDetailPanel`**: `show_game(self, game_name, icon)`, `_refresh_if_running(self)` (timer: refresca horas y sesiones mientras el juego corre), `_populate_sessions(self, sessions)`, `_build_session_row(self, index, session)`, `_launch_game(self)`, `_open_notes(self)`, `_toggle_favorites(self)`, `_show_props_menu(self)`.
 - **`ClearableTreeWidget`** — árbol que se deselecciona al hacer click en vacío.
-- **`PlatformTab`**: `_build_sidebar`, `_on_game_clicked/_on_game_double_clicked/_on_game_right_click`, `show_game_menu`, `update_on_close`, `toggle_favorite`, `fill_games`, `_add_game_item`, `_delete_selected_item`, `_filter_games`, `_find_item_by_name`, `launch_game`, `confirm_remove` + `_on_confirm`, `add_exe`, `change_game_directory`, `ask_steam_id`, `_game_path`, `gotofolder`, `create_direct_access`, `create_start_menu_shortcut`.
-- **`CloudSettingsWindow`**: `_build_ui`, `_toggle_clouding`, `_change_account`, `_confirm`, `_recall_token` (+ `worker()` interna), `_on_login_finished`, `_get_account_info`.
-- **`MainWindow`**: `_start_reload`, `_on_reload_finished`, `_add_platform_tab`, `_build_header`, `update_title_label`, `add_platform`, `_open_cloud_settings`, `_on_tab_close_requested`, `_remove_tab`, `_on_tab_context_menu`, `_save_tab_order`, `_replace_tab`, `_rename_tab`, `_add_folder`, `_remove_folder`, `_reload_tab`.
+- **`PlatformTab`**: `_build_sidebar`, `_on_game_clicked/_on_game_double_clicked/_on_game_right_click`, `show_game_menu`, `update_on_close` (reordena la lista y refresca favoritos), `refresh_games`, `_launch_selected` (Enter), `_confirm_remove_selected` (Supr), `toggle_favorite`, `fill_games`, `_add_game_item`, `_delete_selected_item`, `_filter_games`, `_find_item_by_name`, `launch_game`, `confirm_remove` + `_on_confirm`, `add_exe`, `change_game_directory`, `ask_steam_id`, `_game_path`, `gotofolder`, `create_direct_access`, `create_start_menu_shortcut`.
+- **`SettingsWindow`** (Configuración: cloud + "varios juegos a la vez"): `_build_ui`, `_toggle_clouding`, `_change_account`, `_confirm`, `_recall_token` (+ `worker()` interna), `_on_login_finished`, `_get_account_info`.
+- **`MainWindow`**: `_start_reload`, `_on_reload_finished` (restaura la última pestaña), `_remember_tab`, `_refresh_all_tabs` (tras el merge de la nube al abrir), `_add_platform_tab`, `_build_header`, `update_title_label`, `add_platform`, `_open_settings`, `_on_tab_close_requested`, `_remove_tab`, `_on_tab_context_menu`, `_save_tab_order`, `_replace_tab`, `_open_properties`, `_reload_tab`.
+- **`PlatformPropertiesDialog`**: directorios (`_add_folder`, `_remove_folder`, `_open_folder`) y `_rename`; `changed` indica si hay que reconstruir la pestaña.
+- `_exe_filter()` — filtro del diálogo de ejecutables (en Linux, "Todos los archivos" primero).
 - `ask_platform_folder(window)` — diálogo de nombre + carpeta al agregar plataforma.
 - `_session_label(session)` — texto de una fila del historial (partida, resumen mensual o legacy).
-- **`NotesDialog`**: `ask(parent, game_name, notes)` — editor de notas; devuelve el texto o `None` si se canceló.
+- **`NotesDialog`**: `ask(parent, game_name, notes)` — editor de notas; devuelve el texto al cerrar (se guarda siempre).
 - **`ReloadWorker`**: `run(self)` + helper suelto `reload_with_thread(ui, on_callback)`.
 - **`QtLauncherUI`**: `launch_ui()` — entry point de esta interfaz.
 

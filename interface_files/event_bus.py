@@ -29,8 +29,10 @@ class QtEventBus(QObject, GameEventBus):
         super().__init__()
         self.ui_registry = {}
         self.game_closed.connect(self._on_game_closed)
+        self.game_started.connect(lambda p, g: self._running.add((p, g)))
         self._watchers = []
-        self._watched: set[tuple[str, str]] = set()
+        # juegos que la UI ya sabe que corren (lanzados acá o vigilados)
+        self._running: set[tuple[str, str]] = set()
 
     def register_ui(self, platform, ui_instance):
         self.ui_registry[platform] = ui_instance
@@ -42,25 +44,30 @@ class QtEventBus(QObject, GameEventBus):
     def notify_game_started(self, platform_name, game_name):
         self.game_started.emit(platform_name, game_name)
 
+    def watch_external(self):
+        """Busca juegos lanzados desde otro proceso (accesos directos con --launch).
+
+        La UI la llama periódicamente con un timer.
+        """
+        for platform_name, ui in list(self.ui_registry.items()):
+            self._watch_running(platform_name, ui)
+
     def _watch_running(self, platform_name, ui_instance):
-        """Juegos que ya corrían al abrir la UI (ej. lanzados con --launch)."""
+        """Empieza a vigilar los juegos de la plataforma que corren y la UI no conocía."""
         for session in store.open_sessions():
             key = (platform_name, session.game)
-            if session.platform != platform_name or key in self._watched:
+            if session.platform != platform_name or key in self._running:
                 continue
-            self._watched.add(key)
+            self._running.add(key)
             if hasattr(ui_instance, "mark_game_running"):
                 ui_instance.mark_game_running(session.game)
             self.notify_game_started(platform_name, session.game)
             watcher = RunningGameWatcher(platform_name, session.game)
-            watcher.game_closed_detected.connect(self._on_watched_closed)
+            watcher.game_closed_detected.connect(self.notify_game_closed)
             self._watchers.append(watcher)
 
-    def _on_watched_closed(self, platform_name, game_name):
-        self._watched.discard((platform_name, game_name))
-        self.notify_game_closed(platform_name, game_name)
-
     def _on_game_closed(self, platform_name, game_name):
+        self._running.discard((platform_name, game_name))
         ui = self.ui_registry.get(platform_name)
         if ui:
             try:

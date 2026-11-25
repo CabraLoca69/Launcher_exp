@@ -1,0 +1,9 @@
+# Desarrollo y build: pip install -r requirements-dev.txt
+-r requirements.txt
+altgraph==0.17.5
+pyinstaller==6.20.0
+pyinstaller-hooks-contrib==2026.5
+setuptools==82.0.1
+pytest==9.2.0
+ruff==0.17.6
+mypy==2.4.1

@@ -66,7 +66,7 @@ def test_hide_platform_keeps_playtime_and_readd_restores_it(st):
     assert st.list_games("steam") == []
 
     st.add_platform("steam")
-    st.upsert_game("steam", "a", "/lib/a")
+    st.upsert_game("steam", "a", "/lib/a", revive=True)  # carpeta agregada de nuevo
     assert [g.name for g in st.list_games("steam")] == ["a"]
     assert st.total_seconds("steam", "a") == 600
 
@@ -130,6 +130,17 @@ def test_upsert_reuses_game_with_same_path(st):
     assert [g.name for g in st.list_games("p")] == ["Game_v2"]
 
 
+def test_upsert_without_revive_keeps_hidden_game_hidden(st):
+    """Recargar la pestaña no trae de vuelta un juego que el usuario borró."""
+    st.add_game("p", "a", "/g/a")
+    st.hide_game("p", "a")
+    st.upsert_game("p", "a", "/g/a")
+    st.upsert_game("p", "a", "/g/otra/a")  # mismo nombre, otra ruta
+    assert st.list_games("p") == []
+    st.upsert_game("p", "a", "/g/a", revive=True)
+    assert [g.name for g in st.list_games("p")] == ["a"]
+
+
 def test_hide_platform_clears_favorites(st):
     st.add_platform("p")
     st.add_game("p", "a", "/a")
@@ -183,7 +194,7 @@ def test_close_orphan_sessions_keeps_last_saved_duration(st):
     alive = st.start_session(st.get_game("p", "b").id, "pc1", pid=2)
     st.update_session(dead, 120)
 
-    st.close_orphan_sessions(lambda pid: pid == 2)
+    st.close_orphan_sessions(lambda s: s.pid == 2)
 
     assert [s.id for s in st.open_sessions()] == [alive]
     assert st.total_seconds("p", "a") == 120

@@ -78,7 +78,8 @@ def _migrate(
     for key, path in kv.items():
         parts = _split(key, "game_list")
         if parts and isinstance(path, str):
-            store.upsert_game(parts[0], parts[1], path)
+            # revive: un merge de la nube previo pudo crearlo oculto
+            store.upsert_game(parts[0], parts[1], path, revive=True)
             games.setdefault(parts[1], []).append(parts)
 
     for key, value in kv.items():

@@ -67,7 +67,7 @@ El launcher sincroniza los datos en la nube para no perderlos:
 Por el momento la forma de instalar y ejecutar es clonar el repo y ejecutar launcher69.py directamente, la interfaz puede tener errores.
 De todas formas deberias tomarte el trabajo de instalar las ['dependencias'](./requirements.txt) necesarias para que esto funcione.
 
-Se puede empaquetar ejecutando `build.py` (decide solo si genera `.exe` o binario según el SO). El resultado queda en `dist/Launcher69/`, ya con la estructura que necesita:
+Se puede empaquetar ejecutando `build.py` (antes: `pip install -r requirements-dev.txt`, que trae PyInstaller) (decide solo si genera `.exe` o binario según el SO). El resultado queda en `dist/Launcher69/`, ya con la estructura que necesita:
 
 ```
 Launcher69(.exe)

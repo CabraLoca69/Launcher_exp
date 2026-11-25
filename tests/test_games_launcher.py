@@ -1,6 +1,8 @@
 import os
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
+import psutil
 import pytest
 
 from helpers import games_launcher
@@ -63,6 +65,21 @@ def test_launch_game_unknown_raises(store, fake_launch):
     assert fake_launch.calls == []
 
 
+def test_upload_on_close_runs_in_the_session_thread(store, fake_launch, monkeypatch):
+    """Con `--launch` el proceso sale al terminar la partida: la subida no puede
+    quedar en un hilo daemon que muera antes de terminar."""
+    uploads = []
+    monkeypatch.setattr(
+        games_launcher, "sync_once", lambda upload: uploads.append(upload)
+    )
+    store.set_setting("cloud_sync_enabled", True)
+    store.add_game("steam", "a", "/g/a.exe")
+
+    GameLauncherController().launch_game("a")  # el fixture lo corre síncrono
+
+    assert uploads == [True]
+
+
 def _running(store, platform, game):
     store.add_game(platform, game, f"/{game}")
     return store.start_session(store.get_game(platform, game).id, "pc", pid=os.getpid())
@@ -89,6 +106,18 @@ def test_launch_game_blocked_when_another_is_running(store, fake_launch):
     assert fake_launch.calls == []
 
 
-def test_is_process_running():
-    assert games_launcher.is_process_running(os.getpid()) is True
-    assert games_launcher.is_process_running(DEAD_PID) is False
+def _session(pid, started_at):
+    return SimpleNamespace(pid=pid, started_at=started_at.isoformat(timespec="seconds"))
+
+
+def test_session_alive_only_for_the_process_we_launched():
+    me = psutil.Process()
+    after_me = datetime.fromtimestamp(me.create_time()) + timedelta(seconds=1)
+    assert games_launcher.is_session_alive(_session(os.getpid(), after_me))
+    assert not games_launcher.is_session_alive(_session(DEAD_PID, after_me))
+
+
+def test_reused_pid_after_reboot_is_not_the_game():
+    """La sesión empezó antes de que existiera el proceso con ese PID: es otro."""
+    long_ago = datetime(2020, 1, 1)
+    assert not games_launcher.is_session_alive(_session(os.getpid(), long_ago))

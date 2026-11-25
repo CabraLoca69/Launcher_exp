@@ -360,20 +360,33 @@ class Store:
             self._upsert_by_name(platform, name, path)
             return True
 
-    def upsert_game(self, platform: str, name: str, path: str) -> None:
-        """Lo usa el escaneo: deja visible el juego de esa ruta.
+    def upsert_game(
+        self, platform: str, name: str, path: str, revive: bool = False
+    ) -> None:
+        """Lo usa el escaneo: agrega el juego de esa ruta si no existe.
 
         Si ya hay un juego con la misma ruta (aunque se llame distinto, ej. migrado
-        con otro nombre) se reutiliza, para no partir sus horas en dos.
+        con otro nombre) se reutiliza, para no partir sus horas en dos. Un juego
+        que el usuario ocultó sigue oculto, salvo con `revive` (carpeta agregada
+        de nuevo a propósito).
         """
         with self.transaction() as conn:
             pid = self._ensure_platform(platform)
-            cur = conn.execute(
-                "UPDATE games SET hidden = 0 WHERE platform_id = ? AND path = ?",
-                (pid, path),
+            if conn.execute(
+                "SELECT 1 FROM games WHERE platform_id = ? AND path = ?", (pid, path)
+            ).fetchone():
+                if revive:
+                    conn.execute(
+                        "UPDATE games SET hidden = 0 WHERE platform_id = ? AND path = ?",
+                        (pid, path),
+                    )
+                return
+            conn.execute(
+                "INSERT INTO games(platform_id, name, path) VALUES (?, ?, ?) "
+                "ON CONFLICT(platform_id, name) DO UPDATE SET path = excluded.path, "
+                "hidden = CASE WHEN ? THEN 0 ELSE hidden END",
+                (pid, name, path, revive),
             )
-            if cur.rowcount == 0:
-                self._upsert_by_name(platform, name, path)
 
     def _upsert_by_name(self, platform: str, name: str, path: str) -> None:
         with self.transaction() as conn:
@@ -457,10 +470,10 @@ class Store:
                 return s
         return None
 
-    def close_orphan_sessions(self, is_alive: Callable[[int], bool]) -> None:
+    def close_orphan_sessions(self, is_alive: Callable[[Session], bool]) -> None:
         """Cierra las sesiones abiertas cuyo proceso ya no existe (cierre abrupto)."""
         for s in self.open_sessions():
-            if s.pid is not None and not is_alive(s.pid):
+            if not is_alive(s):
                 self.end_session(s.id)
 
     def recent_sessions(

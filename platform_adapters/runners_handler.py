@@ -1,49 +1,68 @@
-import subprocess
+import logging
 import os
-import psutil
+import subprocess
 import time
 
-#--------- imports internos -------
+import psutil
+
+# --------- imports internos -------
 from data_access.datafiles import store
 
+logger = logging.getLogger(__name__)
+
 INVALID_NAMES = {
-    "reaper", "wineserver", "steam", "steamwebhelper",
-    "services.exe", "explorer.exe"
+    "reaper",
+    "wineserver",
+    "steam",
+    "steamwebhelper",
+    "services.exe",
+    "explorer.exe",
 }
+
+
+def _game_dir(game_path: str) -> str | None:
+    """Carpeta del juego: muchos juegos buscan sus archivos relativos a ella."""
+    return os.path.dirname(game_path) or None
+
 
 class GameRunner:
     def run(self, game_path: str, steam_appid: str | None = None):
         raise NotImplementedError
 
+
 class WindowsRunner(GameRunner):
     def run(self, game_path, steam_appid=None):
-        return subprocess.Popen(game_path)
+        return subprocess.Popen(game_path, cwd=_game_dir(game_path))
+
 
 class LinuxNativeRunner(GameRunner):
     def run(self, game_path, steam_appid=None):
-        return subprocess.Popen([game_path])
+        return subprocess.Popen([game_path], cwd=_game_dir(game_path))
+
 
 class LinuxWineRunner(GameRunner):
     def __init__(self, wineprefix=None):
         self.wineprefix = wineprefix or os.path.expanduser("~/.wine")
 
     def run(self, game_path, steam_appid=None):
-        game_exe = os.path.basename(game_path) #este devuelve con el .exe
+        game_exe = os.path.basename(game_path)  # este devuelve con el .exe
 
         if steam_appid:
-            process= subprocess.Popen(["steam", f"steam://rungameid/{steam_appid}"])
+            process = subprocess.Popen(["steam", f"steam://rungameid/{steam_appid}"])
 
-        else :
+        else:
             env = os.environ.copy()
             env["WINEPREFIX"] = self.wineprefix
-        
-            process= subprocess.Popen(["wine", game_path], env=env)
+
+            process = subprocess.Popen(
+                ["wine", game_path], env=env, cwd=_game_dir(game_path)
+            )
 
         real_proc = self.find_real_wine_process(process.pid, game_exe)
 
         return real_proc or process
 
-    #al ejecutar desde steam o wine primero se llama a un proceso que va a crear el proceso real del juego... 
+    # al ejecutar desde steam o wine primero se llama a un proceso que va a crear el proceso real del juego...
     def find_real_wine_process(self, parent_pid, expected_exe):
         expected_exe = expected_exe.lower()
 
@@ -55,18 +74,17 @@ class LinuxWineRunner(GameRunner):
                     for proc in parent.children(recursive=True):
                         if self._cmdline_matches(proc, expected_exe):
                             return proc
-                except:
+                except psutil.Error:
                     pass
 
             # 2. Buscar globalmente en cmdline (necesario para Steam/Proton)
-            for proc in psutil.process_iter(['cmdline']):
+            for proc in psutil.process_iter(["cmdline"]):
                 try:
                     if self._cmdline_matches(proc, expected_exe):
-                        print(f"proceso retornado: {proc}")
+                        logger.info("Proceso del juego encontrado: %s", proc)
                         return proc
 
-                except Exception as e:
-                    print(f"se rompio : {e}")
+                except psutil.Error:
                     continue
 
             time.sleep(0.1)
@@ -87,15 +105,13 @@ class LinuxWineRunner(GameRunner):
 
             if expected_exe not in last_base:
                 return False
-            
-            if ".wine" not in cmd[0].lower() and "drive_c" not in cmd[0].lower():
-                return False
 
-            return True
+            exe_path = cmd[0].lower()
+            return ".wine" in exe_path or "drive_c" in exe_path
 
-        except Exception as e:
-            print (f"exepcion buscando matches en cmd : {e}")
+        except psutil.Error:
             return False
+
 
 class LinuxSelector(GameRunner):
     def run(self, game_path, steam_appid=None):

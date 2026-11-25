@@ -1,50 +1,74 @@
+import logging
 import os
-import sys
 import shutil
+import sys
 from pathlib import Path
 
 if sys.platform.startswith("win"):
     import win32com.client
 
-#--------- imports internos -------
-from data_access.datafiles import ICONS_CACHE_DIR, ICONS
+# --------- imports internos -------
+from data_access.datafiles import ICONS, ICONS_CACHE_DIR
+from helpers.icon_utils import icon_cache_name
+
+logger = logging.getLogger(__name__)
+_SCRIPT = Path(__file__).resolve().parent.parent / "launcher69.py"
+
+
+def launcher_target() -> tuple[str, str]:
+    """Programa a ejecutar y argumentos previos al `--launch`.
+
+    Congelado, el ejecutable es el launcher. Desde el código, `sys.executable` es
+    Python y hay que pasarle el script.
+    """
+    if getattr(sys, "frozen", False):
+        return sys.executable, ""
+    return sys.executable, f'"{_SCRIPT}" '
 
 
 def launch_args(platform_name: str, game_name: str) -> str:
     """Argumentos con los que un acceso directo abre el launcher para este juego."""
-    return f'--launch "{game_name}" --platform "{platform_name}"'
+    prefix = launcher_target()[1]
+    return f'{prefix}--launch "{game_name}" --platform "{platform_name}"'
 
 
 class ShortcutCreator:
-    def create_direct_access(self, platform_name, game_name, game_path, destino_desktop=True):
+    def create_direct_access(
+        self, platform_name, game_name, game_path, destino_desktop=True
+    ):
         raise NotImplementedError
 
-    def create_start_menu_shortcut(self, platform_name, game_name, game_path, icon_path=None):
+    def create_start_menu_shortcut(
+        self, platform_name, game_name, game_path, icon_path=None
+    ):
         raise NotImplementedError
 
-#_____________________WINDOWS____________________
+
+# _____________________WINDOWS____________________
 class WindowsShortcutCreator(ShortcutCreator):
-
-    def create_direct_access(self, platform_name, game_name, game_path, destino_desktop=True):
+    def create_direct_access(
+        self, platform_name, game_name, game_path, destino_desktop=True
+    ):
         shell = win32com.client.Dispatch("WScript.Shell")
 
         desktop = shell.SpecialFolders("Desktop") if destino_desktop else os.getcwd()
 
         shortcut_path = os.path.join(
-            desktop,
-            f"{os.path.splitext(game_name)[0]} Launcher.lnk"
+            desktop, f"{os.path.splitext(game_name)[0]} Launcher.lnk"
         )
 
         shortcut = shell.CreateShortcut(shortcut_path)
-        shortcut.TargetPath = sys.executable
+        shortcut.TargetPath = launcher_target()[0]
         shortcut.Arguments = launch_args(platform_name, game_name)
         shortcut.IconLocation = game_path
         shortcut.save()
 
-    def create_start_menu_shortcut(self, platform_name, game_name, game_path, icon_path=ICONS):
+    def create_start_menu_shortcut(
+        self, platform_name, game_name, game_path, icon_path=ICONS
+    ):
 
         try:
-            launcher_exe = Path(sys.executable).resolve()
+            launcher_exe = Path(launcher_target()[0]).resolve()
             launcher_dir = launcher_exe.parent
 
             start_menu = (
@@ -69,12 +93,15 @@ class WindowsShortcutCreator(ShortcutCreator):
 
             shortcut.save()
 
-        except Exception as e:
-            print(f"Error creando Start Menu shortcut: {e}")
+        except Exception:
+            logger.exception("Error creando el acceso en el menú Inicio")
 
-#______________ LINUX ______________
+
+# ______________ LINUX ______________
 class LinuxShortcutCreator(ShortcutCreator):
-    def create_direct_access(self, platform_name, game_name, game_path, destino_desktop=True):
+    def create_direct_access(
+        self, platform_name, game_name, game_path, destino_desktop=True
+    ):
         desktop_dir = self.get_desktop_dir() if destino_desktop else Path.cwd()
         desktop_dir.mkdir(parents=True, exist_ok=True)
 
@@ -85,7 +112,7 @@ class LinuxShortcutCreator(ShortcutCreator):
         content = f"""[Desktop Entry]
 Name={game_name}
 Comment=Lanzador Cl69
-Exec="{sys.executable}" {launch_args(platform_name, game_name)}
+Exec="{launcher_target()[0]}" {launch_args(platform_name, game_name)}
 Icon={icon_target}
 Terminal=false
 Type=Application"""
@@ -93,14 +120,16 @@ Type=Application"""
         file_path.write_text(content)
         os.chmod(file_path, 0o755)
 
-    def create_start_menu_shortcut(self, platform_name, game_name, game_path, icon_path=ICONS):
+    def create_start_menu_shortcut(
+        self, platform_name, game_name, game_path, icon_path=ICONS
+    ):
 
         app_dir = Path.home() / ".local/share/applications"
         app_dir.mkdir(parents=True, exist_ok=True)
 
         file_path = app_dir / f"{game_name.lower().replace(' ', '_')}.desktop"
-        
-        command = f'"{sys.executable}" {launch_args(platform_name, game_name)}'
+
+        command = f'"{launcher_target()[0]}" {launch_args(platform_name, game_name)}'
 
         icon_target = self._resolve_icon(game_name, game_path)
 
@@ -127,8 +156,8 @@ StartupNotify=true"""
 
         return Path.home() / "Desktop"
 
-    def _resolve_icon(self, game_name, game_path):      
-        cache_icon_path = ICONS_CACHE_DIR / f"{game_name}.png"
+    def _resolve_icon(self, game_name, game_path):
+        cache_icon_path = ICONS_CACHE_DIR / f"{icon_cache_name(game_path)}.png"
 
         if not cache_icon_path.exists():
             return Path("/usr/share/pixmaps/default.png")
@@ -141,6 +170,8 @@ StartupNotify=true"""
         try:
             shutil.copy(cache_icon_path, target)
             return target
-        except Exception as e:
-            print("Error al copiar", e)
+        except OSError:
+            logger.warning(
+                "No se pudo copiar el ícono %s", cache_icon_path, exc_info=True
+            )
             return Path("/usr/share/pixmaps/default.png")

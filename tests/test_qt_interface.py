@@ -170,7 +170,7 @@ def test_main_window_detects_games_launched_from_shortcuts(store, bus, no_icons)
     store.start_session(store.get_game("steam", "a").id, "pc", pid=os.getpid())
     bus.watch_external()
     QApplication.processEvents()
-    assert "a" in win.sessions_bar.sessions
+    assert ("steam", "a") in win.sessions_bar.sessions
 
     bus.watch_external()  # no duplica watchers
     assert len(bus._watchers) == 1

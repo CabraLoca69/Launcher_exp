@@ -5,7 +5,7 @@ Launcher de escritorio (Windows y Linux) que trackea el tiempo de juego de cualq
 ## Comandos
 - Entorno: `source venv/bin/activate` (venv dentro del proyecto, Python 3.14).
 - Instalar deps: `pip install -r requirements.txt`.
-- Herramientas de dev: `pip install pytest ruff mypy` (ya instaladas en el venv).
+- Herramientas de dev y build (pytest, ruff, mypy, pyinstaller): `pip install -r requirements-dev.txt` (ya instaladas en el venv).
 - Correr: `python launcher69.py` (UI), `--launch "<juego>" [--platform "<plataforma>"]` (lanza un juego sin UI y registra la sesión).
 - Tests: `pytest -q`. `tests/conftest.py` redirige `data/` a un directorio temporal.
 - Lint y formato: `ruff check . && ruff format .`

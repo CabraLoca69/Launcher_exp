@@ -37,7 +37,7 @@ Carpeta de contenido, no de código. Guarda todo lo que el programa lee/escribe 
 | `cloud_files/` | Credenciales/config necesarias para acceder a Google Drive |
 | `databases/` | Bases de datos SQLite usadas por el programa |
 | `icons/` | Iconos propios del launcher (UI) |
-| `icons_cache/` | Iconos de ejecutables ya extraídos/cacheados (para no reprocesar) |
+| `icons_cache/` | Iconos de ejecutables ya extraídos/cacheados (para no reprocesar), nombrados por un hash de la ruta del juego |
 | `themes/` | Temas: plantilla `base.qss` + una paleta `.json` por tema |
 
 ---
@@ -109,6 +109,6 @@ Todo lo que **cambia de comportamiento según el sistema operativo**. Patrón st
 5. `data_manager.py` consulta `data_access/store.py`.
 6. Usuario hace doble click en un juego → `helpers/games_launcher.py` entra en acción.
 7. `games_launcher.py` delega en `platform_adapters/runners_handler.py` (que sabe cómo lanzar procesos según el SO).
-8. Mientras corre, cada 60 s se guarda la duración de la sesión en `store.py`; al cerrar se marca como terminada y, si corresponde, `cloudsync.py` sube las sesiones a Drive.
+8. Mientras corre, cada 60 s se guarda la duración de la sesión en `store.py` (solo local); al cerrar se marca como terminada y, si corresponde, `cloudsync.py` sube las sesiones a Drive.
 
 ---

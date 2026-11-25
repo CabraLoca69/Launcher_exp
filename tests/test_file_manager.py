@@ -5,6 +5,7 @@ import pytest
 
 from data_access.datafiles import ICONS_CACHE_DIR
 from helpers.file_manager import FileManager
+from helpers.icon_utils import icon_cache_name
 
 
 @pytest.fixture
@@ -29,7 +30,7 @@ def test_delete_game_hides_it_keeps_playtime_and_removes_icon(fm, store):
     game = store.get_game("steam", "a")
     sid = store.start_session(game.id, "pc", pid=None)
     store.end_session(sid, 60)
-    icon = ICONS_CACHE_DIR / "a.png"
+    icon = ICONS_CACHE_DIR / f"{icon_cache_name('/g/a.exe')}.png"
     icon.write_bytes(b"x")
 
     fm.delete_game("steam", "a")
@@ -101,3 +102,23 @@ def test_add_platform_scans_and_revives_hidden_games(fm, store, tmp_path):
         "Game.v2": str(tmp_path / "sub" / "Game.v2.x86_64"),
         "tool.v3": str(tmp_path / "sub" / "tool.v3"),
     }
+
+
+@pytest.mark.skipif(
+    not sys.platform.startswith("linux"), reason="detección por bit de ejecución"
+)
+def test_reload_does_not_bring_back_deleted_games(fm, store, tmp_path):
+    """Borrar un juego y apretar Recargar (o agregar otra carpeta) no lo revive."""
+    for name in ("a", "b"):
+        exe = tmp_path / "lib" / name
+        exe.parent.mkdir(exist_ok=True)
+        exe.write_text("")
+        os.chmod(exe, 0o755)
+    (tmp_path / "otra").mkdir()
+    fm.add_platform("lin", str(tmp_path / "lib"))
+    fm.delete_game("lin", "a")
+
+    fm.scan_for_games("lin")
+    fm.add_folder("lin", str(tmp_path / "otra"))
+
+    assert [g.name for g in store.list_games("lin")] == ["b"]

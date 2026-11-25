@@ -1,10 +1,10 @@
 import glob
 import logging
 import os
-from pathlib import Path
 
 # --------- imports internos -------
 from data_access.datafiles import ICONS_CACHE_DIR, store
+from helpers.icon_utils import icon_cache_name
 from platform_adapters.platform_handler import PlatformHandler
 
 logger = logging.getLogger(__name__)
@@ -32,8 +32,9 @@ class FileManager:
         self.add_folder(platform_name, folder)
 
     def add_folder(self, platform_name: str, folder: str) -> str:
+        """Agrega la carpeta y muestra sus juegos, también los que estaban ocultos."""
         store.add_folder(platform_name, folder)
-        self.scan_for_games(platform_name)
+        self._scan_folder(platform_name, folder, revive=True)
         return folder
 
     def add_game(self, platform_name: str, exe_path: str) -> tuple[bool, str]:
@@ -68,27 +69,29 @@ class FileManager:
         return store.rename_platform(old_name, new_name)
 
     def scan_for_games(self, platform_name: str) -> None:
-        detector = PlatformHandler().get("exedetect")
+        """Busca juegos nuevos en todas las carpetas. Los que se borraron siguen ocultos."""
         for folder in store.list_folders(platform_name):
-            if not os.path.isdir(folder):
-                continue
-            for root, _, files in os.walk(folder):
-                for file in files:
-                    full_path = os.path.join(root, file)
-                    if not detector.is_executable(full_path):
-                        continue
-                    if any(k in file.lower() for k in IGNORE_KEYWORDS):
-                        continue
-                    store.upsert_game(
-                        platform_name, detector.game_name(file), full_path
-                    )
+            self._scan_folder(platform_name, folder, revive=False)
+
+    def _scan_folder(self, platform_name: str, folder: str, revive: bool) -> None:
+        if not os.path.isdir(folder):
+            return
+        detector = PlatformHandler().get("exedetect")
+        for root, _, files in os.walk(folder):
+            for file in files:
+                full_path = os.path.join(root, file)
+                if not detector.is_executable(full_path):
+                    continue
+                if any(k in file.lower() for k in IGNORE_KEYWORDS):
+                    continue
+                store.upsert_game(
+                    platform_name, detector.game_name(file), full_path, revive
+                )
 
     def remove_game_icon(self, game_path: str) -> None:
         if not game_path:
             return
-        pattern = os.path.join(
-            ICONS_CACHE_DIR, glob.escape(Path(game_path).stem) + ".*"
-        )
+        pattern = os.path.join(ICONS_CACHE_DIR, icon_cache_name(game_path) + ".*")
         for icon_file in glob.glob(pattern):
             try:
                 os.remove(icon_file)

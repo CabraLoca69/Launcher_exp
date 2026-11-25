@@ -14,13 +14,18 @@ Diferencias clave con la versión tkinter:
     - CustomPopupMenu sí es flotante (QFrame sobre el widget padre), igual que antes.
 """
 
-from PySide6.QtWidgets import (
-    QDialog, QFrame, QVBoxLayout, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QWidget, QApplication,
-)
-
-from PySide6.QtCore import Qt, QObject, QPoint, QEvent, QTimer
+from PySide6.QtCore import QEvent, QObject, QPoint, Qt, QTimer
 from PySide6.QtGui import QKeyEvent
+from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 class CloseOnClickOutside:
@@ -53,7 +58,9 @@ class CloseOnClickOutside:
     def _clicked_outside(self, clicked: QWidget) -> bool:
         modal = QApplication.activeModalWidget()
         if modal is not None and modal is not self and not self._owns(modal):
-            return False  # otro diálogo ajeno está encima: no es un click "afuera" nuestro
+            return (
+                False  # otro diálogo ajeno está encima: no es un click "afuera" nuestro
+            )
         return not self._owns(clicked)
 
     def _owns(self, widget: QObject | None) -> bool:
@@ -76,16 +83,24 @@ class BasePopup(QDialog):
     para cerrar con un resultado.
     """
 
-    def __init__(self, parent: QWidget = None, callback=None, modal: bool = True, popup_mode: bool = False):
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        callback=None,
+        modal: bool = True,
+        popup_mode: bool = False,
+    ):
         super().__init__(parent)
         self.callback = callback
 
         if popup_mode:
-            self.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
+            self.setWindowFlags(Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
         else:
-            self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+            self.setWindowFlags(
+                Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint
+            )
 
-        self.setAttribute(Qt.WA_TranslucentBackground, False)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
         self.setModal(modal)
 
     def showEvent(self, event):
@@ -101,7 +116,7 @@ class BasePopup(QDialog):
         super().closeEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent):
-        if event.key() == Qt.Key_Escape:
+        if event.key() == Qt.Key.Key_Escape:
             self._respond(None)
         else:
             super().keyPressEvent(event)
@@ -117,6 +132,7 @@ class BasePopup(QDialog):
         self.accept()
         if self.callback:
             self.callback(value)
+
 
 # ===========================================================================
 # MENÚ CONTEXTUAL FLOTANTE
@@ -134,7 +150,7 @@ class CustomPopupMenu(BasePopup):
         menu.show_at(event.globalPos())
     """
 
-    def __init__(self, parent: QWidget = None, on_close_callback=None):
+    def __init__(self, parent: QWidget | None = None, on_close_callback=None):
         wrapped = (lambda _v: on_close_callback()) if on_close_callback else None
         super().__init__(parent, callback=wrapped, modal=False, popup_mode=True)
 
@@ -143,14 +159,14 @@ class CustomPopupMenu(BasePopup):
         self._layout.setContentsMargins(4, 4, 4, 4)
         self._layout.setSpacing(2)
 
-    def add_button(self, text: str, command, width: int = None):
+    def add_button(self, text: str, command, width: int | None = None):
         btn = QPushButton(text)
-        btn.setCursor(Qt.PointingHandCursor)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
         if width:
             btn.setFixedWidth(width)
 
         def _on_click():
-            self._respond(None)               # cierra siempre, aunque command falle
+            self._respond(None)  # cierra siempre, aunque command falle
             if command:
                 QTimer.singleShot(0, command)  # corre una vez cerrado el menú
 
@@ -167,14 +183,13 @@ class CustomPopupMenu(BasePopup):
 
         adjusted = QPoint(global_pos.x() + offset_x, global_pos.y() + offset_y)
 
-        if self.parent():
-            local = self.parent().mapFromGlobal(adjusted)
-        else:
-            local = adjusted
+        parent = self.parentWidget()
+        local = parent.mapFromGlobal(adjusted) if parent else adjusted
 
         self.move(local)
         self.raise_()
         self.show()
+
 
 # ===========================================================================
 # DIÁLOGO DE TEXTO
@@ -198,7 +213,12 @@ class InputDialog(BasePopup):
         dlg.exec()
     """
 
-    def __init__(self, parent: QWidget = None, prompt: str = "Ingrese valor:", callback=None):
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        prompt: str = "Ingrese valor:",
+        callback=None,
+    ):
         super().__init__(parent, callback)
 
         layout = QVBoxLayout(self)
@@ -235,6 +255,7 @@ class InputDialog(BasePopup):
         self.entry.setFocus()
 
     def _respond_input(self, confirmed: bool):
+        value: str | bool
         if confirmed:
             value = self.entry.text().strip().title()
             value = value if value else False
@@ -272,7 +293,7 @@ class ConfirmDialog(BasePopup):
 
     def __init__(
         self,
-        parent: QWidget = None,
+        parent: QWidget | None = None,
         title: str = "Confirmar",
         message: str = "¿Estás seguro?",
         callback=None,

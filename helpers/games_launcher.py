@@ -1,14 +1,15 @@
 import logging
 import threading
 import time
+from datetime import datetime
 
 import psutil
 
 # -------- imports internos -------
-from data_access.cloudsync import call_upload
+from data_access.cloudsync import sync_once
 from data_access.datafiles import store
 from data_access.machine_id import get_machine_id
-from data_access.store import Game
+from data_access.store import Game, Session
 from helpers.safe_threading import safe_thread
 from interface_files.ui_handler import get_event_bus
 from platform_adapters.platform_handler import PlatformHandler
@@ -16,21 +17,40 @@ from platform_adapters.platform_handler import PlatformHandler
 logger = logging.getLogger(__name__)
 
 HEARTBEAT_S = 60  # cada cuánto se guarda la duración de una partida en curso
+# `started_at` se guarda sin fracciones de segundo: margen para comparar relojes
+_PID_MARGIN_S = 5
 
 
-def is_process_running(pid: int) -> bool:
+def is_session_alive(session: Session) -> bool:
+    """El proceso de la sesión sigue vivo y es el mismo que lanzamos.
+
+    Tras un reinicio, otro proceso puede tener el mismo PID: si arrancó después
+    que la sesión, no es el juego.
+    """
+    if session.pid is None:
+        return False
     try:
-        return (
-            psutil.pid_exists(pid)
-            and psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
-        )
+        process = psutil.Process(session.pid)
+        if process.status() == psutil.STATUS_ZOMBIE:
+            return False
+        started = datetime.fromisoformat(session.started_at).timestamp()
+        return process.create_time() <= started + _PID_MARGIN_S
     except psutil.Error:
         return False
 
 
 def _upload_if_enabled() -> None:
-    if store.get_setting("cloud_sync_enabled", False):
-        call_upload()
+    """Sube en el hilo que llama (el de la partida, no daemon).
+
+    Con `--launch` no hay UI: un hilo daemon moriría al salir el proceso, antes
+    de terminar la subida.
+    """
+    if not store.get_setting("cloud_sync_enabled", False):
+        return
+    try:
+        sync_once(upload=True)
+    except Exception:
+        logger.exception("Error subiendo el backup a la nube")
 
 
 class GameLauncherController:
@@ -42,7 +62,7 @@ class GameLauncherController:
         if not cls._instance:
             with cls._new_lock:
                 if not cls._instance:  # doble check adentro del lock
-                    store.close_orphan_sessions(is_process_running)
+                    store.close_orphan_sessions(is_session_alive)
                     cls._instance = super().__new__(cls)
         return cls._instance
 
@@ -89,7 +109,6 @@ class GameLauncherController:
         def heartbeat():
             while not stop.wait(HEARTBEAT_S):
                 store.update_session(session_id, int(time.time() - started))
-                _upload_if_enabled()
 
         safe_thread(heartbeat)
         try:

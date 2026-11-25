@@ -41,22 +41,13 @@ def main(argv: list[str] | None = None) -> None:
         start_qt_ui()
 
 
-def start_qt_ui():
+def start_qt_ui() -> None:
     from interface_files.qt_interface import QtLauncherUI
-
-    init("Qt")
-    set_launcher_controller()
-    QtLauncherUI.launch_ui()
-
-
-def set_launcher_controller():
-    GameLauncherController()
-
-
-def init(interface: str):
     from interface_files.ui_handler import init_event_bus
 
-    init_event_bus(interface)
+    init_event_bus("Qt")
+    GameLauncherController()  # cierra las sesiones huérfanas antes de mostrar la UI
+    QtLauncherUI.launch_ui()
 
 
 if __name__ == "__main__":

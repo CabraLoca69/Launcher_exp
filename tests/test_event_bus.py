@@ -41,3 +41,14 @@ def test_register_ui_marks_games_already_running(store):
     ui = RecordingUI()
     QtEventBus().register_ui("steam", ui)
     assert ui.running == ["a"]
+
+
+def test_watcher_is_dropped_when_game_closes(store):
+    store.add_game("steam", "a", "/a")
+    store.start_session(store.get_game("steam", "a").id, "pc", pid=os.getpid())
+    bus = QtEventBus()
+    bus.register_ui("steam", RecordingUI())
+    assert len(bus._watchers) == 1
+
+    bus._on_game_closed("steam", "a")
+    assert bus._watchers == {}

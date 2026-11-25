@@ -1,12 +1,13 @@
 import sys
+from typing import ClassVar
 
-#--------- imports internos -------
-from .executables_handler import WindowsExecutableDetector, UnixExecutableDetector
-from .icons_handler import WindowsIconProvider, LinuxIconProvider
-from .menus_handler import WindowsMenuOptions, LinuxMenuOptions
-from .paths_handler import WindowsGoToFolder, LinuxGoToFolder
-from .runners_handler import WindowsRunner, LinuxSelector
-from .shortcuts_handler import WindowsShortcutCreator, LinuxShortcutCreator
+# --------- imports internos -------
+from .executables_handler import UnixExecutableDetector, WindowsExecutableDetector
+from .icons_handler import LinuxIconProvider, WindowsIconProvider
+from .menus_handler import LinuxMenuOptions, WindowsMenuOptions
+from .paths_handler import LinuxGoToFolder, WindowsGoToFolder
+from .runners_handler import LinuxSelector, WindowsRunner
+from .shortcuts_handler import LinuxShortcutCreator, WindowsShortcutCreator
 
 
 def _detect_os() -> str:
@@ -40,7 +41,7 @@ PLATFORM_METHODS = {
 
 
 class PlatformHandler:
-    _instances_cache: dict[str, object] = {}
+    _instances_cache: ClassVar[dict[str, object]] = {}
 
     def get(self, key: str):
         try:

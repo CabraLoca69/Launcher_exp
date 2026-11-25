@@ -1,6 +1,7 @@
-#--------- imports internos -------
-from .store import Store
+# --------- imports internos -------
 from base_path import get_portable_base_dir
+
+from .store import Store
 
 # ------------------------------
 # Directorios de datos

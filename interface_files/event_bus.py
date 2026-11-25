@@ -9,19 +9,7 @@ from helpers.db_qwatcher import RunningGameWatcher
 logger = logging.getLogger(__name__)
 
 
-# --- interfaz común ---
-class GameEventBus:
-    def register_ui(self, platform, ui_instance):
-        raise NotImplementedError
-
-    def notify_game_started(self, platform_name, game_name):
-        raise NotImplementedError
-
-    def notify_game_closed(self, platform_name, game_name):
-        raise NotImplementedError
-
-
-class QtEventBus(QObject, GameEventBus):
+class QtEventBus(QObject):
     game_closed = Signal(str, str)
     game_started = Signal(str, str)
 
@@ -30,7 +18,8 @@ class QtEventBus(QObject, GameEventBus):
         self.ui_registry = {}
         self.game_closed.connect(self._on_game_closed)
         self.game_started.connect(lambda p, g: self._running.add((p, g)))
-        self._watchers = []
+        # juegos de otro proceso que se están vigilando, hasta que cierran
+        self._watchers: dict[tuple[str, str], RunningGameWatcher] = {}
         # juegos que la UI ya sabe que corren (lanzados acá o vigilados)
         self._running: set[tuple[str, str]] = set()
 
@@ -64,10 +53,13 @@ class QtEventBus(QObject, GameEventBus):
             self.notify_game_started(platform_name, session.game)
             watcher = RunningGameWatcher(platform_name, session.game)
             watcher.game_closed_detected.connect(self.notify_game_closed)
-            self._watchers.append(watcher)
+            self._watchers[key] = watcher
 
     def _on_game_closed(self, platform_name, game_name):
         self._running.discard((platform_name, game_name))
+        watcher = self._watchers.pop((platform_name, game_name), None)
+        if watcher:
+            watcher.deleteLater()
         ui = self.ui_registry.get(platform_name)
         if ui:
             try:
@@ -76,7 +68,7 @@ class QtEventBus(QObject, GameEventBus):
                 logger.exception("Error actualizando la UI de %s", platform_name)
 
 
-class NullEventBus(GameEventBus):
+class NullEventBus:
     """Sin UI (`--launch`): nadie escucha."""
 
     def register_ui(self, platform, ui_instance):

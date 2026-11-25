@@ -1,6 +1,15 @@
+import hashlib
 from pathlib import Path
 
 from PIL import Image
+
+
+def icon_cache_name(game_path: str) -> str:
+    """Nombre del ícono cacheado de un juego, único por ruta.
+
+    Por nombre de archivo chocarían dos juegos con `Game.exe`.
+    """
+    return hashlib.sha1(game_path.encode()).hexdigest()[:16]
 
 
 def ico_to_png(ico_path, output_dir=None, size=(256, 256)):
